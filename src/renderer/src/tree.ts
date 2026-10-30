@@ -3,6 +3,8 @@ import type { TreeNode } from '@shared/types'
 export interface TreeApi {
   refresh(): Promise<void>
   setFilter(text: string): void
+  /** 展开某个文件的所有上级目录（打开外部/深层文件时用） */
+  revealPath(path: string): void
   closeMenu(): void
 }
 
@@ -37,6 +39,8 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
   let filter = ''
   let menu: HTMLElement | null = null
   const collapsed = new Set<string>()
+  /** 第一次拿到目录树时把所有文件夹折叠起来：不然一屏全是展开的，很乱 */
+  let collapsedOnce = false
 
   function closeMenu(): void {
     menu?.remove()
@@ -164,6 +168,10 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
   async function refresh(): Promise<void> {
     try {
       all = await window.th.fs.tree(opts.root())
+      if (!collapsedOnce) {
+        for (const node of all) if (node.isDir) collapsed.add(node.path)
+        collapsedOnce = true
+      }
       render()
     } catch (err) {
       opts.onError(`读取目录失败：${errorMessage(err)}`)
@@ -175,6 +183,16 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
     render()
   }
 
-  const api: TreeApi = { refresh, setFilter, closeMenu }
+  function revealPath(path: string): void {
+    let cursor = parentOf(path)
+    let changed = false
+    while (cursor && cursor !== parentOf(cursor)) {
+      if (collapsed.delete(cursor)) changed = true
+      cursor = parentOf(cursor)
+    }
+    if (changed) render()
+  }
+
+  const api: TreeApi = { refresh, setFilter, revealPath, closeMenu }
   return api
 }

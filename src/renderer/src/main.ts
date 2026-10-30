@@ -398,7 +398,9 @@ function renderTabs(): void {
 
     const title = document.createElement('span')
     title.className = 'title'
-    title.textContent = `${doc.dirty ? '● ' : ''}${doc.title}`
+    const isExternal = !!doc.path && !doc.path.toLowerCase().startsWith(cfg.workspaceRoot.toLowerCase())
+    title.textContent = `${doc.dirty ? '● ' : ''}${isExternal ? '↗ ' : ''}${doc.title}`
+    if (isExternal) tab.title = `工作区外文件：${doc.path}`
 
     const close = document.createElement('button')
     close.className = 'close'
@@ -668,6 +670,22 @@ function updateStatus(): void {
 /* 打开 / 保存                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 打开工作区外的文件：主进程默认不让读，
+ * 但这是用户亲手点/拖/命令行带进来的，先授权再打开。
+ */
+async function openExternal(path: string): Promise<void> {
+  try {
+    const ok = await window.th.fs.allow(path)
+    if (!ok) {
+      toast(`找不到文件：${path}`)
+      return
+    }
+    await openPath(path)
+  } catch (err) {
+    toast(errorMessage(err))
+  }
+}
 async function openPath(path: string, line?: number): Promise<void> {
   const existing = docs.find((d) => d.path === path)
   if (existing) {
@@ -711,6 +729,10 @@ async function openPath(path: string, line?: number): Promise<void> {
     doc.diskSize = stat.size
     doc.readonly = file.readonly
     openDoc(doc)
+    // 工作区内的文件：顺手展开树里的上级目录，别让用户自己一层层找
+    if (doc.path && doc.path.toLowerCase().startsWith(cfg.workspaceRoot.toLowerCase())) {
+      tree?.revealPath(doc.path)
+    }
     focusLine(doc, line)
     if (file.truncated) {
       toast(`只读加载了前 ${TRUNCATE_BYTES / 1048576} MB（原文件 ${(stat.size / 1048576).toFixed(1)} MB）`)
@@ -1010,7 +1032,7 @@ function setupDropZone(): void {
     'dragover',
     (event) => {
       const types = Array.from(event.dataTransfer?.types ?? [])
-      if (!types.includes('application/x-th-path') && !types.includes('application/x-th-tab')) return
+      if (!types.includes('application/x-th-path') && !types.includes('application/x-th-tab') && !types.includes('Files')) return
       event.preventDefault()
       event.stopPropagation()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
@@ -1033,6 +1055,19 @@ function setupDropZone(): void {
       const tabId = event.dataTransfer?.getData('application/x-th-tab') ?? ''
       const path = event.dataTransfer?.getData('application/x-th-path') ?? ''
       main.classList.remove('drop-target')
+
+      // 从资源管理器拖进来的真实文件：先授权再打开（工作区外的文件也允许）
+      const dropped = Array.from(event.dataTransfer?.files ?? [])
+      if (!tabId && !path && dropped.length > 0) {
+        event.preventDefault()
+        event.stopPropagation()
+        const first = dropped[0] as File & { path?: string }
+        const abs = first.path ?? ''
+        if (!abs) return
+        if (dropped.length > 1) toast(`一次只打开第一个文件（共 ${dropped.length} 个）`)
+        void openExternal(abs)
+        return
+      }
       if (!tabId && !path) return
       event.preventDefault()
       event.stopPropagation()
@@ -2208,13 +2243,13 @@ async function boot(): Promise<void> {
   wsChip.title = `agent 工作区：${cfg.workspaceRoot}`
 
   window.th.ai.onOpenFile((path) => {
-    void openPath(path)
+    void openExternal(path)
     toast(`已打开 ${baseName(path)}`)
   })
   // 双击关联文件启动：主进程先把路径存着，这里取一次
   void window.th.app.takePendingFile().then((path) => {
     if (!path) return
-    void openPath(path)
+    void openExternal(path)
     toast(`已打开 ${baseName(path)}`)
   })
 
@@ -2260,6 +2295,11 @@ async function boot(): Promise<void> {
         // 焦点在右栏就保存右栏，否则保存当前标签
         if (focusPane === 'right' && splitIsOpen()) void saveSplit()
         else void saveDoc(activeDoc(), event.shiftKey)
+      } else if (key === 'o') {
+        event.preventDefault()
+        void window.th.fs.pickOpen().then((picked) => {
+          if (picked) void openPath(picked)
+        })
       } else if (key === 'n') {
         event.preventDefault()
         openDoc(makeUntitled())

@@ -48,6 +48,8 @@ export interface ThApi {
     reveal(path: string): Promise<void>
     trash(path: string): Promise<void>
     pickOpen(): Promise<string | null>
+    /** 用户手势授权：允许访问工作区外的这个文件 */
+    allow(path: string): Promise<boolean>
     pickImage(): Promise<string | null>
     importImage(sourcePath: string): Promise<{ path: string; name: string } | null>
     readImageData(sourcePath: string): Promise<{ dataUrl: string; name: string } | null>

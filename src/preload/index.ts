@@ -38,6 +38,7 @@ const api = {
     reveal: (path: string) => ipcRenderer.invoke('fs:reveal', path) as Promise<void>,
     trash: (path: string) => ipcRenderer.invoke('fs:trash', path) as Promise<void>,
     pickOpen: () => ipcRenderer.invoke('fs:pickOpen') as Promise<string | null>,
+    allow: (path: string) => ipcRenderer.invoke('fs:allow', path) as Promise<boolean>,
     pickImage: () => ipcRenderer.invoke('fs:pickImage') as Promise<string | null>,
     importImage: (sourcePath: string) =>
       ipcRenderer.invoke('fs:importImage', sourcePath) as Promise<{ path: string; name: string } | null>,

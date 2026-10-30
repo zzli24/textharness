@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, relative, sep } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import type { AppConfig, ChatMessage, FileMeta } from '@shared/types'
 import { dayStamp, savePastedImage } from './services/assets'
 import { loadEditorState, saveEditorState, type SavedEditorState } from './services/editorState'
@@ -30,6 +30,49 @@ export interface IpcDeps {
   takePendingFile(): string | null
 }
 
+/* ------------------------------------------------------------------ */
+/* 外部文件授权                                                        */
+/*                                                                     */
+/* 工作区仍是默认沙箱：AI 工具（tools.ts）只认工作区，越界直接报错。    */
+/* 但「用户亲自点名的文件」必须能打开——文件对话框、拖进窗口、命令行、  */
+/* 文件关联。这类路径记在下面的表里，只对本进程有效，重启即清空。       */
+/* ------------------------------------------------------------------ */
+
+const externalFiles = new Set<string>()
+
+const normPath = (p: string): string => resolve(p).toLowerCase()
+
+function allowExternalFile(path: string): void {
+  try {
+    externalFiles.add(normPath(path))
+  } catch {
+    /* 忽略非法路径 */
+  }
+}
+
+function isExternalAllowed(path: string): boolean {
+  try {
+    return externalFiles.has(normPath(path))
+  } catch {
+    return false
+  }
+}
+
+function insideWorkspace(root: string, target: string): boolean {
+  const r = resolve(root)
+  const t = resolve(target)
+  return t === r || t.startsWith(r + sep)
+}
+
+/** 统一入口：工作区内放行；工作区外只认已授权的文件（读写都适用） */
+function guard(path: string): string {
+  const cfg = loadConfig()
+  if (insideWorkspace(cfg.workspaceRoot, path) || isExternalAllowed(path)) return resolve(path)
+  throw new Error(
+    `这个文件在工作区之外：${path}\n要编辑它，请用「Ctrl+O 打开文件…」，或者直接把文件拖进窗口。`
+  )
+}
+
 export function registerIpc(deps: IpcDeps): void {
   /* ---------- 配置 ---------- */
   ipcMain.handle('config:get', () => loadConfig())
@@ -52,14 +95,12 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   ipcMain.handle('fs:read', async (_e, path: string, options?: { maxBytes?: number }) => {
-    const cfg = loadConfig()
-    assertInside(cfg.workspaceRoot, path)
+    guard(path)
     return readFileContent(path, options)
   })
 
   ipcMain.handle('fs:stat', async (_e, path: string) => {
-    const cfg = loadConfig()
-    assertInside(cfg.workspaceRoot, path)
+    guard(path)
     return statFile(path)
   })
 
@@ -82,8 +123,7 @@ export function registerIpc(deps: IpcDeps): void {
   )
 
   ipcMain.handle('fs:write', async (_e, path: string, text: string, meta: FileMeta, dryRun = false) => {
-    const cfg = loadConfig()
-    assertInside(cfg.workspaceRoot, path)
+    guard(path)
     return writeFileContent(path, text, meta, dryRun)
   })
 
@@ -107,8 +147,7 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   ipcMain.handle('fs:reveal', async (_e, path: string) => {
-    const cfg = loadConfig()
-    const abs = assertInside(cfg.workspaceRoot, path)
+    const abs = guard(path)
 
     try {
       shell.showItemInFolder(abs)
@@ -121,8 +160,7 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   ipcMain.handle('fs:trash', async (_e, path: string) => {
-    const cfg = loadConfig()
-    assertInside(cfg.workspaceRoot, path)
+    guard(path)
     await shell.trashItem(path)
   })
 
@@ -178,7 +216,16 @@ export function registerIpc(deps: IpcDeps): void {
     }
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return null
+    // 用户亲手选的文件：授权，可以被 fs:read / fs:stat / fs:write 访问
+    allowExternalFile(result.filePaths[0])
     return result.filePaths[0]
+  })
+
+  /** 渲染层有明确的用户手势（拖入窗口、命令行、最近文件）时调这个 */
+  ipcMain.handle('fs:allow', (_e, path: string) => {
+    if (!existsSync(path)) return false
+    allowExternalFile(path)
+    return true
   })
 
   ipcMain.handle('fs:pickImage', async () => {
@@ -279,8 +326,8 @@ export function registerIpc(deps: IpcDeps): void {
     }
     const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return null
-    // 只允许存到工作目录内，保证后续 fs:write 的越界校验不会误伤
-    assertInside(cfg.workspaceRoot, result.filePath)
+    // 另存到工作区外也允许，但要先授权，否则接下来的 fs:write 会被拦
+    allowExternalFile(result.filePath)
     return result.filePath
   })
 
