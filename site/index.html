@@ -821,7 +821,7 @@
       <section id="download">
         <div class="eyebrow">Download</div>
         <h2>下载安装包</h2>
-        <p class="section-lede">NSIS 安装向导，可选安装目录，自带卸载程序。</p>
+        <p class="section-lede">Windows 走 NSIS 安装向导，可选安装目录、自带卸载；macOS 提供 Apple Silicon 与 Intel 两种 dmg。</p>
 
         <div class="download-box">
           <div class="panel reveal">
@@ -887,6 +887,41 @@
                 <p style="margin: 8px 0 0">下载后建议核对哈希，确认文件没被篡改：</p>
                 <pre>Get-FileHash .\TextHarness-0.3.0-setup.exe -Algorithm SHA256
 # 期望 4d7e51af3060d7d5584be3ff4b70e0710490ee07a4bc0f479db08edf1a59e6d1</pre>
+              </div>
+            </details>
+          </div>
+
+          <div class="panel reveal" id="mac">
+            <div class="file-row">
+              <div class="file-badge">🍎</div>
+              <div>
+                <div class="file-name">TextHarness-0.3.0-arm64.dmg / -x64.dmg</div>
+                <div class="file-sub">78.0 MB / 81.5 MB · macOS 11+ · Apple Silicon 用 arm64，Intel 用 x64</div>
+              </div>
+            </div>
+
+            <div style="margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap">
+              <a class="btn primary" href="./downloads/TextHarness-0.3.0-arm64.dmg" download>
+                ↓ Apple Silicon (M 系列)
+              </a>
+              <a class="btn ghost" href="./downloads/TextHarness-0.3.0-x64.dmg" download>
+                ↓ Intel 芯片
+              </a>
+            </div>
+
+            <code class="hash">arm64 sha256 f199a6b222c2c73510e8c6a0cef001db6ed186e07e114c946bcfdd1017721f85
+x64   sha256 65445722304ad29fbb43c2e7a509f7b1871ccb8cb1490b955ac8cc597101c492</code>
+
+            <div class="note">
+              未做 Apple 签名与公证，首次打开会被 Gatekeeper 拦住：右键 App →「打开」，或在终端执行
+              <code>xattr -dr com.apple.quarantine /Applications/TextHarness.app</code>。
+            </div>
+
+            <details class="faq">
+              <summary>该下 arm64 还是 x64？</summary>
+              <div class="faq-body">
+                左上角苹果菜单 →「关于本机」：写着 Apple M1/M2/M3/M4 的选 <strong>arm64</strong>；
+                写着 Intel Core i5/i7/i9 的选 <strong>x64</strong>。选错也能跑（Rosetta），只是慢一些。
               </div>
             </details>
           </div>
