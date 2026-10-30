@@ -58,6 +58,22 @@ export interface TaskEvent {
 }
 
 /** 主进程请求用户确认一次写入（界面上展示 diff） */
+/** agent 申请访问工作区外文件 */
+/** agent 想跑一段脚本，执行前要用户确认 */
+export interface ScriptRequest {
+  id: string
+  code: string
+  timeoutMs: number
+  scriptPath: string
+}
+
+export interface AccessRequest {
+  id: string
+  path: string
+  /** read = 只读；write = 读写 */
+  mode: 'read' | 'write'
+}
+
 export interface ApprovalRequest {
   id: string
   path: string

@@ -1,6 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  AccessRequest,
   ApprovalRequest,
+  ScriptRequest,
   AppConfig,
   ChatDelta,
   ChatDone,
@@ -74,6 +76,14 @@ const api = {
       ipcRenderer.on('ai:approval', (_event, request: ApprovalRequest) => cb(request))
     },
     approvalResult: (id: string, ok: boolean) => ipcRenderer.send('ai:approval:result', { id, ok }),
+    onScriptApproval: (cb: (request: ScriptRequest) => void) => {
+      ipcRenderer.on('ai:script', (_event, request: ScriptRequest) => cb(request))
+    },
+    onAccessRequest: (cb: (request: AccessRequest) => void) => {
+      ipcRenderer.on('ai:access', (_event, request: AccessRequest) => cb(request))
+    },
+    accessResult: (id: string, decision: 'deny' | 'read' | 'write') =>
+      ipcRenderer.send('ai:access:result', { id, decision }),
     onOpenFile: (cb: (path: string) => void) => {
       ipcRenderer.on('file:open', (_event, path: string) => cb(path))
     },
@@ -85,6 +95,21 @@ const api = {
     readText: () => ipcRenderer.invoke('app:readText') as Promise<string>,
     version: () => ipcRenderer.invoke('app:version') as Promise<string>,
     takePendingFile: () => ipcRenderer.invoke('app:takePendingFile') as Promise<string | null>,
+    /** 从资源管理器拖进来的 File 取真实路径（Electron 32+ 起 File.path 已移除） */
+    /** 仅开发期：直接触发一次授权申请，用来验证弹窗（打包后不存在） */
+    ...(process.env['NODE_ENV'] !== 'development'
+      ? {}
+      : {
+          debugAccess: (path: string, mode: 'read' | 'write') =>
+            ipcRenderer.invoke('debug:access', path, mode) as Promise<'deny' | 'read' | 'write'>,
+        }),
+    pathForFile: (file: File) => {
+      try {
+        return webUtils.getPathForFile(file)
+      } catch {
+        return ''
+      }
+    },
   },
   tasks: {
     list: () => ipcRenderer.invoke('tasks:list'),

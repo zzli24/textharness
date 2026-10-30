@@ -16,6 +16,7 @@ import * as ed from './editor'
 import { createTree, type TreeApi } from './tree'
 import { askTable, askText, confirmDialog, createModal, openSettings } from './dialogs'
 import { openDiff } from './diffView'
+import { requestAccess, requestScriptApproval } from './approval'
 import { createGrid, detectDelimiter, markdownToRows, rowsToMarkdown, type GridApi } from './gridView'
 import { createChat, type ChatApi } from './aiChat'
 
@@ -1022,7 +1023,8 @@ function splitPair(): { leftText: string; rightText: string; leftName: string; r
 
 /** 拖拽：右半边 = 并排编辑，左半边 = 正常打开 */
 function setupDropZone(): void {
-  const main = $('main')
+  // 挂在整个窗口上：在侧栏、AI 面板上松手也能打开
+  const main = $('app')
   const isRightHalf = (x: number): boolean => {
     const rect = main.getBoundingClientRect()
     return x > rect.left + rect.width * 0.62
@@ -1061,9 +1063,12 @@ function setupDropZone(): void {
       if (!tabId && !path && dropped.length > 0) {
         event.preventDefault()
         event.stopPropagation()
-        const first = dropped[0] as File & { path?: string }
-        const abs = first.path ?? ''
-        if (!abs) return
+        // Electron 32+ 没有 File.path 了，必须走 webUtils
+        const abs = window.th.app.pathForFile(dropped[0])
+        if (!abs) {
+          toast('拿不到拖入文件的路径，试试用 Ctrl+O 打开')
+          return
+        }
         if (dropped.length > 1) toast(`一次只打开第一个文件（共 ${dropped.length} 个）`)
         void openExternal(abs)
         return
@@ -2242,6 +2247,22 @@ async function boot(): Promise<void> {
   wsChip.textContent = baseName(cfg.workspaceRoot)
   wsChip.title = `agent 工作区：${cfg.workspaceRoot}`
 
+  // agent 想跑脚本 → 先看代码再决定
+  window.th.ai.onScriptApproval((request) => {
+    void requestScriptApproval(request).then((ok) => {
+      window.th.ai.approvalResult(request.id, ok)
+      toast(ok ? '脚本已放行' : '已拒绝执行脚本')
+    })
+  })
+
+  // agent 想访问工作区外的文件 → 弹授权框
+  window.th.ai.onAccessRequest((request) => {
+    void requestAccess(request).then((decision) => {
+      window.th.ai.accessResult(request.id, decision)
+      if (decision === 'deny') toast('已拒绝 agent 的访问申请')
+      else toast(decision === 'write' ? '已允许 agent 读写这个文件' : '已允许 agent 只读这个文件')
+    })
+  })
   window.th.ai.onOpenFile((path) => {
     void openExternal(path)
     toast(`已打开 ${baseName(path)}`)

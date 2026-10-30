@@ -162,7 +162,7 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
     )
   }
 
-  const maxSteps = opts.maxSteps ?? 8
+  const maxSteps = opts.maxSteps ?? 16
   const tools = opts.allowedTools
     ? TOOL_DEFS.filter((tool) => opts.allowedTools!.includes(tool.function.name))
     : TOOL_DEFS
@@ -265,5 +265,5 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
     }
   }
 
-  throw new Error(`达到最大步数 ${maxSteps}，已停止（可能是任务太复杂或模型在打转）`)
+  throw new Error(`达到最大步数 ${maxSteps}，已停止。\n下一步：直接说"继续"，我会接着上次的进度往下做；如果是方向不对，换个说法告诉我目标即可。`)
 }

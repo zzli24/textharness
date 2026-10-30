@@ -351,6 +351,54 @@ export function registerIpc(deps: IpcDeps): void {
     resolve(Boolean(payload.ok))
   })
 
+  /* 工作区外文件：agent 申请 → 用户点一次 → 本次会话记住 */
+  const pendingAccess = new Map<string, (decision: 'deny' | 'read' | 'write') => void>()
+  /** 规范化路径 → 已授予的权限（进程内记住，重启失效） */
+  const agentAccess = new Map<string, 'read' | 'write'>()
+
+  /** agent 申请工作区外文件的权限：已授权直接返回，否则弹窗问用户 */
+  async function requestAgentAccess(
+    sender: Electron.WebContents,
+    path: string,
+    mode: 'read' | 'write'
+  ): Promise<'deny' | 'read' | 'write'> {
+    const cfg = loadConfig()
+    if (insideWorkspace(cfg.workspaceRoot, path)) return 'write'
+
+    const key = normPath(path)
+    const granted = agentAccess.get(key)
+    if (granted === 'write' || (granted === 'read' && mode === 'read')) return granted
+    // 定时任务等没有窗口的场景：不给权限，也不弹窗
+    if (sender.isDestroyed()) return 'deny'
+
+    return new Promise<'deny' | 'read' | 'write'>((resolve) => {
+      const accessId = `ac_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+      const timer = setTimeout(() => {
+        if (pendingAccess.delete(accessId)) resolve('deny')
+      }, 120_000)
+      pendingAccess.set(accessId, (decision) => {
+        clearTimeout(timer)
+        if (decision !== 'deny') agentAccess.set(key, decision)
+        resolve(decision)
+      })
+      sender.send('ai:access', { id: accessId, path, mode })
+    })
+  }
+
+  // 开发期调试入口：真机打包后不存在
+  if (!app.isPackaged) {
+    ipcMain.handle('debug:access', (event, path: string, mode: 'read' | 'write') =>
+      requestAgentAccess(event.sender, path, mode)
+    )
+  }
+
+  ipcMain.on('ai:access:result', (_e, payload: { id: string; decision: 'deny' | 'read' | 'write' }) => {
+    const resolve = pendingAccess.get(payload.id)
+    if (!resolve) return
+    pendingAccess.delete(payload.id)
+    resolve(payload.decision ?? 'deny')
+  })
+
   ipcMain.handle('ai:model', () => modelInfo(loadConfig()))
   ipcMain.handle('ai:models', () => listModels(loadConfig()))
 
@@ -371,6 +419,7 @@ export function registerIpc(deps: IpcDeps): void {
         root: cfg.workspaceRoot,
         assetsDir: cfg.assetsDir,
         openInEditor: (path: string) => send('file:open', path),
+        requestAccess: (path: string, mode: 'read' | 'write') => requestAgentAccess(sender, path, mode),
         approve: (request) =>
           new Promise<boolean>((resolve) => {
             const approvalId = `ap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
@@ -382,6 +431,19 @@ export function registerIpc(deps: IpcDeps): void {
               resolve(ok)
             })
             send('ai:approval', { id: approvalId, ...request })
+          }),
+        // 脚本执行前确认：把源码摊给用户看
+        approveScript: (request) =>
+          new Promise<boolean>((resolve) => {
+            const approvalId = `sc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+            const timer = setTimeout(() => {
+              if (pendingApprovals.delete(approvalId)) resolve(false)
+            }, 300_000)
+            pendingApprovals.set(approvalId, (ok) => {
+              clearTimeout(timer)
+              resolve(ok)
+            })
+            send('ai:script', { id: approvalId, ...request })
           }),
       },
       events: {

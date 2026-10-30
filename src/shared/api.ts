@@ -73,6 +73,9 @@ export interface ThApi {
     onTool(cb: (event: ToolEventPayload) => void): void
     onApproval(cb: (request: ApprovalRequest) => void): void
     approvalResult(id: string, ok: boolean): void
+    onScriptApproval(cb: (request: ScriptRequest) => void): void
+    onAccessRequest(cb: (request: AccessRequest) => void): void
+    accessResult(id: string, decision: 'deny' | 'read' | 'write'): void
     onOpenFile(cb: (path: string) => void): void
   }
   app: {
@@ -82,6 +85,10 @@ export interface ThApi {
     readText(): Promise<string>
     version(): Promise<string>
     takePendingFile(): Promise<string | null>
+    /** 拖入的 File 取绝对路径，取不到返回空串 */
+    pathForFile(file: File): string
+    /** 仅开发期存在 */
+    debugAccess?(path: string, mode: 'read' | 'write'): Promise<'deny' | 'read' | 'write'>
   }
   tasks: {
     list(): Promise<TaskView[]>
