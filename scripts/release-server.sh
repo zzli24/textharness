@@ -110,7 +110,8 @@ for a in d.get('artifacts', []):
     print(' ', a['id'], a['name'], round(a['size_in_bytes'] / 1048576, 1), 'MB')
 PY
 
-for id in $(python3 -c "import json;d=json.load(open('/root/rel/list.json'));print(' '.join(str(a['id']) for a in d.get('artifacts',[])))"); do
+# 只下 macOS 产物：Windows 包本地已经打好了，再拉一遍纯属浪费带宽
+for id in $(python3 -c "import json;d=json.load(open('/root/rel/list.json'));print(' '.join(str(a['id']) for a in d.get('artifacts',[]) if 'mac' in a['name'].lower()))"); do
   say "  下载 $id"
   curl -sL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
        "$API/actions/artifacts/$id/zip" -o "/root/rel/$id.zip"
