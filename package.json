@@ -1,6 +1,6 @@
 {
   "name": "textharness",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "TextHarness - 轻量本地文本编辑器 + 内置 AI 助手",
   "main": "./out/main/index.js",
   "license": "MIT",
@@ -13,7 +13,8 @@
     "dist": "electron-vite build && electron-builder --win nsis",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "smoke": "electron-vite build && electron ."
+    "smoke": "electron-vite build && electron .",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "iconv-lite": "^0.6.3"

@@ -593,7 +593,7 @@
       </nav>
 
       <header>
-        <div class="badge"><span class="dot"></span> v0.3.0 · Windows x64 · 76.7 MB</div>
+        <div class="badge"><span class="dot"></span> v{{VERSION}} · Windows x64 · {{EXE_SIZE}} MB</div>
         <h1>
           把 AI agent<br />
           <span class="grad">装进你的记事本</span>
@@ -828,19 +828,19 @@
             <div class="file-row">
               <div class="file-badge">🪟</div>
               <div>
-                <div class="file-name">TextHarness-0.3.0-setup.exe</div>
-                <div class="file-sub">76.7 MB · Windows x64 · SHA-256 见下方</div>
+                <div class="file-name">TextHarness-{{VERSION}}-setup.exe</div>
+                <div class="file-sub">{{EXE_SIZE}} MB · Windows x64 · SHA-256 见下方</div>
               </div>
             </div>
 
             <div style="margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap">
-              <a class="btn primary" href="./downloads/TextHarness-0.3.0-setup.exe" download>
+              <a class="btn primary" href="./downloads/TextHarness-{{VERSION}}-setup.exe" download>
                 ↓ 下载安装包
               </a>
               <a class="btn ghost" href="./downloads/sha256.txt" target="_blank">校验值</a>
             </div>
 
-            <code class="hash">sha256 4d7e51af3060d7d5584be3ff4b70e0710490ee07a4bc0f479db08edf1a59e6d1</code>
+            <code class="hash">sha256 {{EXE_SHA}}</code>
 
             <div class="note">
               安装包尚未做代码签名，Windows 首次运行可能提示 SmartScreen：点「更多信息 → 仍要运行」即可。
@@ -882,11 +882,11 @@
                 <ol>
                   <li>点弹窗里的「更多信息」，再点右下角出现的「仍要运行」</li>
                   <li>右键 exe → 属性 → 勾选底部的「解除锁定」→ 确定，再双击</li>
-                  <li>PowerShell 执行 <code>Unblock-File .\TextHarness-0.3.0-setup.exe</code></li>
+                  <li>PowerShell 执行 <code>Unblock-File .\TextHarness-{{VERSION}}-setup.exe</code></li>
                 </ol>
                 <p style="margin: 8px 0 0">下载后建议核对哈希，确认文件没被篡改：</p>
-                <pre>Get-FileHash .\TextHarness-0.3.0-setup.exe -Algorithm SHA256
-# 期望 4d7e51af3060d7d5584be3ff4b70e0710490ee07a4bc0f479db08edf1a59e6d1</pre>
+                <pre>Get-FileHash .\TextHarness-{{VERSION}}-setup.exe -Algorithm SHA256
+# 期望 {{EXE_SHA}}</pre>
               </div>
             </details>
           </div>
@@ -895,22 +895,22 @@
             <div class="file-row">
               <div class="file-badge">🍎</div>
               <div>
-                <div class="file-name">TextHarness-0.3.0-arm64.dmg / -x64.dmg</div>
-                <div class="file-sub">78.0 MB / 81.5 MB · macOS 11+ · Apple Silicon 用 arm64，Intel 用 x64</div>
+                <div class="file-name">TextHarness-{{VERSION}}-arm64.dmg / -x64.dmg</div>
+                <div class="file-sub">{{ARM_SIZE}} MB / {{X64_SIZE}} MB · macOS 11+ · Apple Silicon 用 arm64，Intel 用 x64</div>
               </div>
             </div>
 
             <div style="margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap">
-              <a class="btn primary" href="./downloads/TextHarness-0.3.0-arm64.dmg" download>
+              <a class="btn primary" href="./downloads/TextHarness-{{VERSION}}-arm64.dmg" download>
                 ↓ Apple Silicon (M 系列)
               </a>
-              <a class="btn ghost" href="./downloads/TextHarness-0.3.0-x64.dmg" download>
+              <a class="btn ghost" href="./downloads/TextHarness-{{VERSION}}-x64.dmg" download>
                 ↓ Intel 芯片
               </a>
             </div>
 
-            <code class="hash">arm64 sha256 f199a6b222c2c73510e8c6a0cef001db6ed186e07e114c946bcfdd1017721f85
-x64   sha256 65445722304ad29fbb43c2e7a509f7b1871ccb8cb1490b955ac8cc597101c492</code>
+            <code class="hash">arm64 sha256 {{ARM_SHA}}
+x64   sha256 {{X64_SHA}}</code>
 
             <div class="note">
               未做 Apple 签名与公证，首次打开会被 Gatekeeper 拦住：右键 App →「打开」，或在终端执行
@@ -929,7 +929,7 @@ x64   sha256 65445722304ad29fbb43c2e7a509f7b1871ccb8cb1490b955ac8cc597101c492</c
           <div class="panel reveal" id="start">
             <h3 style="margin: 0 0 14px; font-size: 15px">三步开始用</h3>
             <ol class="steps">
-              <li>双击 <code>TextHarness-0.3.0-setup.exe</code>，选安装目录，下一步到底。</li>
+              <li>双击 <code>TextHarness-{{VERSION}}-setup.exe</code>，选安装目录，下一步到底。</li>
               <li>首次启动在「设置」里确认工作区目录（草稿、知识库、图库都放它下面）。</li>
               <li>右侧 AI 面板首次打开会提示配置：填 Base URL、模型名、API Key（只有 Key 必填），存本机不外传。</li>
             </ol>
@@ -942,7 +942,7 @@ x64   sha256 65445722304ad29fbb43c2e7a509f7b1871ccb8cb1490b955ac8cc597101c492</c
       </section>
 
       <footer>
-        <div>TextHarness v0.3.0 · 本地优先 · 数据不出机器</div>
+        <div>TextHarness v{{VERSION}} · 本地优先 · 数据不出机器</div>
         <div>Built with Electron · CodeMirror 6</div>
       </footer>
     </div>
