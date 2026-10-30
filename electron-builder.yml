@@ -92,7 +92,8 @@ nsis:
 # macOS：需在 macOS 或 macOS Runner 上构建（dmg 依赖 hdiutil）
 mac:
   category: public.app-category.productivity
-  icon: build/icon.png
+  # macOS 用 icns（png 在 CI 上转换会找不到 build/icon.icns）
+  icon: build/icon.icns
   target:
     - target: dmg
       arch:
