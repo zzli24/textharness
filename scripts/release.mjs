@@ -144,8 +144,7 @@ for (;;) {
   }
   // 把服务端日志的新行打出来，避免看起来卡死
   try {
-    const tail = ssh("tail -3 /root/release.log 2>/dev/null | tr '\\n' '\\u0001'")
-    const last = tail.split('\u0001').filter(Boolean).pop() ?? ''
+    const last = ssh('tail -1 /root/release.log 2>/dev/null').trim()
     if (last && last !== lastLogLine) {
       lastLogLine = last
       console.log(`  ${last}`)
