@@ -1,0 +1,119 @@
+appId: com.textharness.app
+productName: TextHarness
+copyright: TextHarness
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+asar: true
+compression: maximum
+
+# 只保留中英两种 Chromium 语言包：55 个 locale 占 40 MB，其实只用得上这两个
+electronLanguages:
+  - zh-CN
+  - en-US
+
+# 注册文件关联：装完之后 Windows 的「打开方式」里才会出现 TextHarness，
+# 否则双击 .sql/.md 只会推荐装了这些扩展名的其它编辑器
+fileAssociations:
+  - ext: md
+    name: Markdown 文档
+    description: Markdown 文档
+    role: Editor
+    icon: build/icon.ico
+  - ext: txt
+    name: 文本文件
+    description: 纯文本文件
+    role: Editor
+    icon: build/icon.ico
+  - ext: log
+    name: 日志文件
+    description: 日志文件
+    role: Editor
+    icon: build/icon.ico
+  - ext: json
+    name: JSON 文件
+    description: JSON 文件
+    role: Editor
+    icon: build/icon.ico
+  - ext: csv
+    name: CSV 表格
+    description: CSV 表格
+    role: Editor
+    icon: build/icon.ico
+  - ext: sql
+    name: SQL 脚本
+    description: SQL 脚本
+    role: Editor
+    icon: build/icon.ico
+  - ext: ini
+    name: 配置文件
+    description: INI 配置文件
+    role: Editor
+    icon: build/icon.ico
+  - ext: yaml
+    name: YAML 文件
+    description: YAML 文件
+    role: Editor
+    icon: build/icon.ico
+  - ext: yml
+    name: YAML 文件
+    description: YAML 文件
+    role: Editor
+    icon: build/icon.ico
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TextHarness
+  # 控制面板「应用和功能」里的显示名
+  uninstallDisplayName: ${productName} ${version}
+  # 卸载时保留用户配置、工作区索引和知识库（数据比程序重要）
+  deleteAppDataOnUninstall: false
+
+# macOS：需在 macOS 或 macOS Runner 上构建（dmg 依赖 hdiutil）
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # 没有 Apple 开发者证书时先不签名；签名和公证见 README
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  darkModeSupport: true
+
+dmg:
+  title: ${productName} ${version}
+
+linux:
+  target:
+    - AppImage
+  category: Utility
+  icon: build/icon.png

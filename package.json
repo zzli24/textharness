@@ -1,0 +1,38 @@
+{
+  "name": "textharness",
+  "version": "0.3.0",
+  "description": "TextHarness - 轻量本地文本编辑器 + 内置 AI 助手",
+  "main": "./out/main/index.js",
+  "license": "MIT",
+  "author": "TextHarness",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "pack": "electron-vite build && electron-builder --win dir",
+    "dist": "electron-vite build && electron-builder --win nsis",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "smoke": "electron-vite build && electron ."
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/lang-sql": "^6.8.0",
+    "@codemirror/language": "^6.10.3",
+    "@codemirror/search": "^6.5.8",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.34.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

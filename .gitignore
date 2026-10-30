@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+release/
+deploy/keys/
+.tmp/
+.npm-cache/
+.electron-cache/
+install.log
+*.log
+
+site/downloads/
+*.exe
+*.dmg
+*.zip
+agent-ws/
