@@ -150,6 +150,10 @@ for key, (name, size, digest) in out.items():
 print('DONE=yes')
 PY
 
+say "=== 6.1 清理旧版本安装包 ==="
+find "$DL" -maxdepth 1 -type f \( -name 'TextHarness-*.exe' -o -name 'TextHarness-*.dmg' \) \
+     ! -name "TextHarness-$VERSION-*" -print -delete | tee -a "$LOG"
+
 say "=== 完成 ==="
 echo "OK=yes" >> "$RESULT"
 ls -lh "$DL" | tail -5 | tee -a "$LOG"

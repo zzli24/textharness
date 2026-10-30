@@ -126,21 +126,36 @@ scp(join(ROOT, 'scripts/release-server.sh'), '/root/release-server.sh')
 ok('tar + 安装包 + 服务端脚本')
 
 /* ---------- 5. 服务器推送 + 等 CI ---------- */
-step('5/7 服务器推送 GitHub 并等待 CI（约 8–12 分钟）')
-let sshOut = ''
-try {
-  sshOut = ssh(
-    `cat > /tmp/.ghtok && chmod 600 /tmp/.ghtok && bash /root/release-server.sh ${version}`,
-    token
-  )
-} catch (err) {
-  sshOut = `${err.stdout ?? ''}${err.stderr ?? ''}`
-}
-for (const line of sshOut.split(/\r?\n/)) {
-  if (/===|run id|job:|DONE|CI_FAILED|失败|完成|MB/.test(line)) console.log(`  ${line}`)
-}
+// 服务端任务可能跑 30 分钟以上，长连接 ssh 容易被中途掐断，
+// 所以：先落 token，再 nohup 后台跑，客户端轮询结果文件。
+step('5/7 服务器推送 GitHub 并等待 CI（约 10–25 分钟）')
+ssh('cat > /tmp/.ghtok && chmod 600 /tmp/.ghtok && rm -f /root/release-result.txt', token)
+ssh(`nohup setsid bash /root/release-server.sh ${version} < /dev/null > /root/release-run.log 2>&1 & echo started`)
 
-const resultRaw = ssh('cat /root/release-result.txt')
+const deadline = Date.now() + 45 * 60 * 1000
+let resultRaw = ''
+let lastLogLine = ''
+for (;;) {
+  if (Date.now() > deadline) fail('等待 CI 超时（45 分钟）')
+  try {
+    resultRaw = ssh('cat /root/release-result.txt 2>/dev/null')
+  } catch {
+    resultRaw = ''
+  }
+  // 把服务端日志的新行打出来，避免看起来卡死
+  try {
+    const tail = ssh("tail -3 /root/release.log 2>/dev/null | tr '\\n' '\\u0001'")
+    const last = tail.split('\u0001').filter(Boolean).pop() ?? ''
+    if (last && last !== lastLogLine) {
+      lastLogLine = last
+      console.log(`  ${last}`)
+    }
+  } catch {
+    /* 忽略 */
+  }
+  if (/^OK=yes/m.test(resultRaw) || /^CI_FAILED=/m.test(resultRaw)) break
+  await new Promise((r) => setTimeout(r, 20000))
+}
 const map = {}
 for (const line of resultRaw.split(/\r?\n/)) {
   const idx = line.indexOf('=')

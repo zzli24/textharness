@@ -46,6 +46,35 @@
 > 临时办法：右键 →「打开」，或 `xattr -dr com.apple.quarantine /Applications/TextHarness.app`。
 > 要正式分发需要 Apple Developer 账号（$99/年）做 codesign + notarize，配 `CSC_LINK` / `APPLE_ID` 等环境变量。
 
+### 一条命令发版
+
+```powershell
+npm run release -- 0.3.1            # 完整流程
+npm run release -- 0.3.1 --skip-build   # 复用 release/ 里已有的 exe
+npm run release -- 0.3.1 --no-site     # 不更新官网
+```
+
+脚本 `scripts/release.mjs`（配套服务端 `scripts/release-server.sh`）按顺序做：
+
+| 步骤 | 动作 |
+|---|---|
+| 1 | 改 `package.json` 版本号 |
+| 2 | `npm run dist` 打 Windows 安装包，算 sha256 |
+| 3 | 本地 `git commit`，`git archive` 打源码 tar |
+| 4 | tar + 安装包 + 服务端脚本 `scp` 到生产机 |
+| 5 | **在服务器上** `git push` → 打 tag → 轮询 Actions 等 macOS dmg（本机 `git push` 在受限环境里跑不通，所以推送放服务器） |
+| 6 | 服务器下载 artifacts、解出 dmg 放进 `/var/www/textharness/downloads/` |
+| 7 | 渲染 `site/index.html` 模板（`{{VERSION}}` / `{{EXE_SHA}}` 等占位符）并部署 |
+
+前置条件：
+
+- `C:\Users\lizhongzheng\Desktop\github.txt` 里放 GitHub PAT（细粒度：`Contents: Read and write`）
+- `deploy/keys/deploy_ed25519` 能免密登录 `root@47.109.100.9`
+- 都可用环境变量覆盖：`GH_TOKEN_FILE`、`DEPLOY_HOST`、`DEPLOY_KEY`
+
+> 官网 `site/index.html` 现在是**模板**，里面是 `{{VERSION}}`、`{{EXE_SIZE}}`、`{{ARM_SHA}}` 这类占位符；
+> 部署时由脚本渲染成正式页面传到服务器（不会把占位符发上线，脚本会检查残留）。
+
 ### 自测脚本
 
 ```powershell
