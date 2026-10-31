@@ -89,6 +89,10 @@ nsis:
   # 卸载时保留用户配置、工作区索引和知识库（数据比程序重要）
   deleteAppDataOnUninstall: false
 
+# 无证书时给 macOS 包补一个 ad-hoc 签名：
+# 否则「已隔离 + 零签名」会被 Gatekeeper 判成「已损坏」
+afterPack: scripts/after-pack.cjs
+
 # macOS：需在 macOS 或 macOS Runner 上构建（dmg 依赖 hdiutil）
 mac:
   category: public.app-category.productivity
@@ -104,7 +108,7 @@ mac:
         - arm64
         - x64
   artifactName: ${productName}-${version}-${arch}.${ext}
-  # 没有 Apple 开发者证书时先不签名；签名和公证见 README
+  # 没有 Apple 开发者证书：electron-builder 不签名，改由 after-pack.cjs 做 ad-hoc 签名
   identity: null
   hardenedRuntime: false
   gatekeeperAssess: false

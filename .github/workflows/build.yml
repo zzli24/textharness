@@ -30,6 +30,16 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      # 验证 ad-hoc 签名是否生效（没签名时 Gatekeeper 会报"已损坏"）
+      - name: Verify code signature
+        run: |
+          APP="release/mac-arm64/TextHarness.app"
+          if [ ! -d "$APP" ]; then APP=$(find release -maxdepth 2 -name '*.app' | head -1); fi
+          echo "检查 $APP"
+          codesign -dv --verbose=2 "$APP" 2>&1 || true
+          echo "--- spctl 评估（unsigned/ad-hoc 会被 reject，属预期）---"
+          spctl -a -vvv "$APP" 2>&1 || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: TextHarness-macOS
