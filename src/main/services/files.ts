@@ -32,9 +32,9 @@ export interface ReadOptions {
 export async function statFile(path: string): Promise<FileStat> {
   try {
     const st = await fs.stat(path)
-    return { exists: true, size: st.size, mtimeMs: st.mtimeMs }
+    return { exists: true, size: st.size, mtimeMs: st.mtimeMs, isDirectory: st.isDirectory() }
   } catch {
-    return { exists: false, size: 0, mtimeMs: 0 }
+    return { exists: false, size: 0, mtimeMs: 0, isDirectory: false }
   }
 }
 

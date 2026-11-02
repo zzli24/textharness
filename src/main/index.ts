@@ -1,27 +1,23 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol } from 'electron'
-import { appendFileSync, existsSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { registerIpc } from './ipc'
 import { loadConfig } from './services/config'
 import { ensureDemoImage } from './services/demoImage'
 import { markCleanExit } from './services/editorState'
+import { currentLogPath, initLogger, trace } from './services/logger'
+import { pruneWorkspaceCaches } from './services/maintenance'
 import { assertInside } from './services/files'
 import { TaskScheduler } from './services/tasks'
 
-const LOG_FILE = process.env['TH_LOG']
-function trace(message: string): void {
-  if (!LOG_FILE) return
-  try {
-    appendFileSync(LOG_FILE, `${new Date().toISOString()} ${message}\n`, 'utf8')
-  } catch {
-    /* ignore */
-  }
-}
+// 日志默认写到 <userData>/logs/main.log（超过 2MB 轮转，保留 3 个），
+// 用户遇到启动失败时能直接把文件发过来排查；TH_LOG 仍可覆盖路径。
+initLogger()
 process.on('uncaughtException', (err) => trace(`uncaughtException: ${err?.stack ?? String(err)}`))
 process.on('unhandledRejection', (reason) => trace(`unhandledRejection: ${String(reason)}`))
 
-trace('module loaded')
+trace(`module loaded  log=${currentLogPath() ?? '(none)'}`)
 
 const IS_SMOKE = process.env.SMOKE === '1'
 
@@ -178,8 +174,37 @@ const hasLock = USE_SINGLE_INSTANCE ? app.requestSingleInstanceLock() : true
 trace(`single instance lock: ${hasLock} (enabled=${USE_SINGLE_INSTANCE})`)
 
 if (!hasLock) {
-  trace('single-instance lock denied, quitting')
-  app.quit()
+  trace('single-instance lock denied, asking user')
+  // 以前这里直接 app.quit()，用户看到的就是"双击没反应"。
+  // 现在给三个选择：唤起已有窗口 / 强制再开一个 / 退出。
+  void app.whenReady().then(async () => {
+    const result = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'TextHarness 已经有一个实例在运行',
+      message: '检测到另一个 TextHarness 进程（可能是后台残留，或者窗口被藏起来了）。',
+      detail:
+        '选「唤起已有窗口」会把那个实例叫到前台；如果它已经卡住没有任何反应，可以选「强制再开一个」。',
+      buttons: ['唤起已有窗口', '强制再开一个', '退出'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    })
+
+    if (result.response === 1) {
+      try {
+        const { spawn } = await import('node:child_process')
+        spawn(process.execPath, process.argv.slice(1), {
+          detached: true,
+          stdio: 'ignore',
+          env: { ...process.env, TH_NO_SINGLE_INSTANCE: '1' },
+        }).unref()
+        trace('relaunched with TH_NO_SINGLE_INSTANCE=1')
+      } catch (err) {
+        trace(`relaunch failed: ${String(err)}`)
+      }
+    }
+    app.quit()
+  })
 } else {
   // macOS：Finder 里双击文件走的是 open-file 事件，不是命令行参数
   app.on('open-file', (event, path) => {
@@ -212,6 +237,18 @@ if (!hasLock) {
     }
     handleAssetProtocol()
     trace('asset protocol handled')
+
+    // 清理 .history / .tmp/agent-scripts 里的老文件，避免无限增长
+    try {
+      const root = loadConfig().workspaceRoot
+      void pruneWorkspaceCaches(root).then((res) => {
+        if (res.historyRemoved || res.scriptsRemoved) {
+          trace(`prune: history-${res.historyRemoved} scripts-${res.scriptsRemoved}`)
+        }
+      })
+    } catch (err) {
+      trace(`prune failed: ${String(err)}`)
+    }
 
     // 放一张示例图，让欢迎页的悬停预览有真实文件可指
     try {

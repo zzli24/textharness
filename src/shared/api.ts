@@ -1,4 +1,5 @@
 import type {
+  AccessRequest,
   ApprovalRequest,
   AppConfig,
   ChatDelta,
@@ -11,6 +12,7 @@ import type {
   ModelInfo,
   ReplaceResult,
   SavedEditorState,
+  ScriptRequest,
   SaveResult,
   SearchOptions,
   SearchResult,

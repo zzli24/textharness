@@ -213,7 +213,7 @@ export function createChat(deps: ChatDeps): ChatApi {
   let currentId: string | null = null
   let current: UiMessage | null = null
   let toolsSinceText = false
-  let sessionId = crypto.randomUUID()
+  let sessionId: string = crypto.randomUUID()
   let modelReady = false
 
   function nearBottom(): boolean {
@@ -696,7 +696,7 @@ export function createChat(deps: ChatDeps): ChatApi {
 
     messages.length = 0
     messagesEl.textContent = ''
-    sessionId = session.id
+    sessionId = String(session.id)
 
     for (const item of session.messages) {
       if (item.role === 'user') {

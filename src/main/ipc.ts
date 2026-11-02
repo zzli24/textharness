@@ -9,7 +9,8 @@ import { loadConfig, patchConfig } from './services/config'
 import { runAgent, type AgentMessage } from './services/agent'
 import { listModels, modelInfo } from './services/llm'
 import { deleteSession, listSessions, loadSession, saveSession, type StoredSession } from './services/sessions'
-import { listFiles, replaceInFiles, searchInFiles, type SearchOptions } from './services/search'
+import { listFiles, replaceInFiles, searchInFiles } from './services/search'
+import type { SearchOptions } from '@shared/types'
 import {
   assertInside,
   createEntry,
@@ -25,7 +26,12 @@ import {
 
 export interface IpcDeps {
   getWindow(): BrowserWindow | null
-  getScheduler(): { runNow(id: string): Promise<void>; isRunning(id: string): boolean; describe(task: AppConfig['tasks'][number]): string } | null
+  getScheduler(): {
+    runNow(id: string): Promise<void>
+    isRunning(id: string): boolean
+    describe(task: AppConfig['tasks'][number]): string
+    touch(): void
+  } | null
   /** 取走启动参数里的文件路径（取一次就清空） */
   takePendingFile(): string | null
 }

@@ -455,8 +455,8 @@ function ensureActiveTabVisible(): void {
 /** 标签栏溢出时才显示左右箭头 */
 function updateTabsNav(): void {
   const tabs = $('tabs')
-  const prev = $('tabs-prev')
-  const next = $('tabs-next')
+  const prev = $<HTMLButtonElement>('tabs-prev')
+  const next = $<HTMLButtonElement>('tabs-next')
   const overflow = tabs.scrollWidth > tabs.clientWidth + 2
   document.getElementById('tabbar')?.classList.toggle('has-overflow', overflow)
   prev.disabled = !overflow || tabs.scrollLeft <= 1
@@ -705,7 +705,6 @@ async function openPath(path: string, line?: number): Promise<void> {
     if (stat.size > LARGE_FILE_BYTES) {
       const mb = (stat.size / 1048576).toFixed(1)
       const choice = await confirmDialog({
-        type: 'warning',
         title: '文件太大',
         message: `${baseName(path)} 有 ${mb} MB，直接打开可能卡顿。`,
         detail: `可以只读加载前 ${TRUNCATE_BYTES / 1048576} MB，编辑后另存为新文件。`,

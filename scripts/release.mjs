@@ -173,6 +173,22 @@ const shaText = [
 writeFileSync(join(ROOT, 'site/downloads/sha256.txt'), `${shaText}\n`, 'utf8')
 ok('三行校验值')
 
+// 供 scripts/render-site.mjs 单独重渲染官网文案用
+writeFileSync(
+  join(ROOT, 'site/downloads/meta.json'),
+  `${JSON.stringify(
+    {
+      version,
+      exe: { size: exeSize, sha: exeSha },
+      arm: { size: map.ARM_SIZE, sha: map.ARM_SHA },
+      x64: { size: map.X64_SIZE, sha: map.X64_SHA },
+    },
+    null,
+    2
+  )}\n`,
+  'utf8'
+)
+
 /* ---------- 7. 官网 ---------- */
 step('7/7 更新官网')
 if (noSite) {

@@ -229,13 +229,13 @@ export function openDiff(options: OpenDiffOptions = {}): void {
   async function openFile(side: 'left' | 'right'): Promise<void> {
     const path = await window.th.fs.pickOpen()
     if (!path) return
-    const text = await window.th.fs.read(path)
+    const file = await window.th.fs.read(path)
     const name = path.split(/[\\/]/).pop() ?? path
     if (side === 'left') {
-      leftText = text
+      leftText = file.text
       leftName = name
     } else {
-      rightText = text
+      rightText = file.text
       rightName = name
     }
     mode = 'diff'

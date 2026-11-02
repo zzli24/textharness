@@ -171,6 +171,8 @@ export interface FileStat {
   exists: boolean
   size: number
   mtimeMs: number
+  /** 是不是目录（打开文件前用来跳过文件夹） */
+  isDirectory: boolean
 }
 
 export interface SearchOptions {

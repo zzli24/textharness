@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process'
 import { existsSync, promises as fs, readFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dayStamp } from './assets'
-import { decodeText, encodeText, type Encoding, type Eol } from './encoding'
+import { decodeText, encodeText } from './encoding'
+import type { Encoding, Eol } from '@shared/types'
 import { assertInside, listTree, looksBinary } from './files'
 
 export interface ToolContext {
