@@ -23,6 +23,8 @@ export interface AppConfig {
   tasks: TaskConfig[]
   /** 启动时补跑错过的任务 */
   catchUpOnLaunch: boolean
+  /** 启动后自动检查新版本 */
+  autoCheckUpdate: boolean
   /** 自定义背景图：工作区内的相对路径，空字符串表示没选 */
   bgImage: string
   /** 内置背景预设序号：0 表示不用预设 */
@@ -235,3 +237,13 @@ export interface SaveResult {
   lossy: boolean
   path: string
 }
+
+/** 自动更新事件（主进程 → 界面） */
+export type UpdateEvent =
+  | { kind: 'checking' }
+  | { kind: 'available'; version: string; notes?: string }
+  | { kind: 'none' }
+  | { kind: 'progress'; percent: number }
+  | { kind: 'downloaded'; version: string }
+  | { kind: 'manual'; version: string; url: string }
+  | { kind: 'error'; message: string }

@@ -42,6 +42,7 @@ function defaults(): AppConfig {
     llmApiKey: '',
     llmReasoning: 'auto',
     catchUpOnLaunch: true,
+    autoCheckUpdate: true,
     bgImage: '',
     bgPreset: 0,
     bgOpacity: 0.4,

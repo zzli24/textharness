@@ -1060,6 +1060,38 @@ body.th-selecting .cm-tooltip-hover {
   word-break: break-all;
 }
 
+/* 状态栏的更新芯片 */
+.upd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.upd-chip:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.set-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.set-check input {
+  accent-color: var(--accent);
+}
+
 .approval-head {
   flex-direction: column;
   align-items: flex-start;
@@ -1078,6 +1110,24 @@ body.th-selecting .cm-tooltip-hover {
   margin-left: 0;
   white-space: normal;
   line-height: 1.7;
+}
+/* 状态栏的更新芯片 */
+.upd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.upd-chip:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .approval-head {
   display: flex;

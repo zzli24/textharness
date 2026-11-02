@@ -68,6 +68,12 @@ fileAssociations:
     role: Editor
     icon: build/icon.ico
 
+# 自动更新：产物和 latest.yml / latest.json 一起放到这个地址
+# （服务器 47.109.100.9 的 /var/www/textharness/updates 目录）
+publish:
+  - provider: generic
+    url: http://47.109.100.9/updates
+
 win:
   icon: build/icon.ico
   target:
@@ -93,6 +99,9 @@ nsis:
 # 否则「已隔离 + 零签名」会被 Gatekeeper 判成「已损坏」
 afterPack: scripts/after-pack.cjs
 
+# 配了 Apple 凭据时自动公证（没有就跳过，见 docs/apple-signing.md）
+afterSign: scripts/notarize.cjs
+
 # macOS：需在 macOS 或 macOS Runner 上构建（dmg 依赖 hdiutil）
 mac:
   category: public.app-category.productivity
@@ -110,6 +119,8 @@ mac:
   artifactName: ${productName}-${version}-${arch}.${ext}
   # 没有 Apple 开发者证书：electron-builder 不签名，改由 after-pack.cjs 做 ad-hoc 签名
   identity: null
+  # 公证要求 hardened runtime = true；现在没有证书，先保持 false（ad-hoc 签名可以正常打开）。
+  # 配好 Apple 证书后把这里改成 true，公证才能通过。
   hardenedRuntime: false
   gatekeeperAssess: false
   darkModeSupport: true

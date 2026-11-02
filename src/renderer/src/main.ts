@@ -58,6 +58,69 @@ function errorMessage(err: unknown): string {
 }
 
 let toastTimer: number | undefined
+/** 状态栏的更新芯片：有新版才出现，点一下下载/安装/去官网 */
+function setupUpdater(): void {
+  const chip = document.getElementById('st-update') as HTMLButtonElement | null
+  const label = document.getElementById('st-update-text')
+  if (!chip || !label) return
+
+  let mode: 'none' | 'available' | 'downloading' | 'ready' | 'manual' = 'none'
+  let targetUrl = ''
+
+  const show = (text: string, title: string): void => {
+    label.textContent = text
+    chip.title = title
+    chip.classList.remove('hidden')
+  }
+
+  chip.addEventListener('click', () => {
+    if (mode === 'ready') {
+      void window.th.ai.updateInstall()
+      return
+    }
+    if (mode === 'manual' && targetUrl) {
+      void window.th.app.openUrl(targetUrl)
+      return
+    }
+    if (mode === 'available' || mode === 'downloading') {
+      toast('正在后台下载更新，完成后这里会提示重启')
+      return
+    }
+    void window.th.ai.updateCheck()
+    toast('已开始检查更新')
+  })
+
+  window.th.ai.onUpdateEvent((event) => {
+    switch (event.kind) {
+      case 'checking':
+        break
+      case 'available':
+        mode = 'available'
+        show(`新版本 v${event.version}`, `正在后台下载 v${event.version}`)
+        break
+      case 'progress':
+        mode = 'downloading'
+        show(`下载中 ${event.percent}%`, '更新包下载中')
+        break
+      case 'downloaded':
+        mode = 'ready'
+        show(`重启更新 v${event.version}`, '点一下重启并安装，用户数据不受影响')
+        toast(`v${event.version} 已下载，点状态栏「重启更新」即可`)
+        break
+      case 'manual':
+        mode = 'manual'
+        targetUrl = event.url
+        show(`新版本 v${event.version}`, '未签名的 macOS 版需要手动下载：点这里打开下载页')
+        break
+      case 'error':
+        break
+      case 'none':
+        if (mode === 'none') chip.classList.add('hidden')
+        break
+    }
+  })
+}
+
 function toast(message: string): void {
   document.querySelector('.toast')?.remove()
   const el = document.createElement('div')
@@ -2173,6 +2236,7 @@ async function boot(): Promise<void> {
   /* 双栏编辑：右侧栏的保存/关闭 + 拖拽落点 */
   $('split-save').addEventListener('click', () => void saveSplit())
   $('split-close').addEventListener('click', () => closeSplit())
+  setupUpdater()
   setupDropZone()
 
   $('st-diff').addEventListener('click', () => {

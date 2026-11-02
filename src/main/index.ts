@@ -8,6 +8,7 @@ import { ensureDemoImage } from './services/demoImage'
 import { markCleanExit } from './services/editorState'
 import { currentLogPath, initLogger, trace } from './services/logger'
 import { pruneWorkspaceCaches } from './services/maintenance'
+import { checkNow as checkUpdateNow, initUpdater, quitAndInstall as quitAndInstallUpdate, updateFeedUrl } from './services/updater'
 import { assertInside } from './services/files'
 import { TaskScheduler } from './services/tasks'
 
@@ -277,13 +278,16 @@ if (!hasLock) {
     })
 
     registerIpc({
-    takePendingFile: () => {
-      const value = pendingOpenFile
-      pendingOpenFile = null
-      return value
-    },
+      takePendingFile: () => {
+        const value = pendingOpenFile
+        pendingOpenFile = null
+        return value
+      },
       getWindow: () => mainWindow,
       getScheduler: () => scheduler,
+      checkUpdateNow,
+      quitAndInstallUpdate,
+      updateFeed: updateFeedUrl,
     })
 
     scheduler = new TaskScheduler((event) => {
@@ -291,6 +295,18 @@ if (!hasLock) {
     })
     scheduler.start()
     trace('scheduler started')
+
+    // 自动更新：默认启动后 15 秒检查一次，之后每 6 小时一次
+    try {
+      const cfg = loadConfig()
+      if (cfg.autoCheckUpdate !== false) {
+        initUpdater((event) => mainWindow?.webContents.send('update:event', event))
+      } else {
+        trace('update: disabled by config')
+      }
+    } catch (err) {
+      trace(`update init failed: ${String(err)}`)
+    }
 
     // 窗口获得焦点也算一次交互，避免"只在打字时才重置闲置计时"
     mainWindow.on('focus', () => scheduler?.touch())

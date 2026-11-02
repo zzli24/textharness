@@ -3,6 +3,7 @@ import type {
   AccessRequest,
   ApprovalRequest,
   ScriptRequest,
+  UpdateEvent,
   AppConfig,
   ChatDelta,
   ChatDone,
@@ -76,6 +77,13 @@ const api = {
       ipcRenderer.on('ai:approval', (_event, request: ApprovalRequest) => cb(request))
     },
     approvalResult: (id: string, ok: boolean) => ipcRenderer.send('ai:approval:result', { id, ok }),
+    openUrl: (url: string) => ipcRenderer.invoke('app:openUrl', url) as Promise<void>,
+    updateCheck: () => ipcRenderer.invoke('update:check') as Promise<void>,
+    updateInstall: () => ipcRenderer.invoke('update:install') as Promise<void>,
+    updateFeed: () => ipcRenderer.invoke('update:feed') as Promise<string>,
+    onUpdateEvent: (cb: (event: UpdateEvent) => void) => {
+      ipcRenderer.on('update:event', (_event, payload: UpdateEvent) => cb(payload))
+    },
     onScriptApproval: (cb: (request: ScriptRequest) => void) => {
       ipcRenderer.on('ai:script', (_event, request: ScriptRequest) => cb(request))
     },

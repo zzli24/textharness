@@ -15,7 +15,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 
@@ -123,6 +123,27 @@ step(`4/7 上传到 ${HOST}`)
 scp(tarPath, '/tmp/release.tar')
 scp(setup, '/var/www/textharness/downloads/')
 scp(join(ROOT, 'scripts/release-server.sh'), '/root/release-server.sh')
+
+// 自动更新用的元数据：latest.yml 给 electron-updater，latest.json 给未签名的 macOS 做提示
+const latestYml = join(ROOT, 'release/latest.yml')
+if (existsSync(latestYml)) {
+  ssh('mkdir -p /var/www/textharness/updates')
+  scp(latestYml, '/var/www/textharness/updates/latest.yml')
+  scp(setup, '/var/www/textharness/updates/')
+  const manifest = {
+    version,
+    releasedAt: new Date().toISOString(),
+    windows: `/updates/${basename(setup)}`,
+    macUrl: `http://47.109.100.9/#download`,
+    notes: '',
+  }
+  writeFileSync(join(ROOT, 'release/latest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  scp(join(ROOT, 'release/latest.json'), '/var/www/textharness/updates/latest.json')
+  ok('自动更新元数据（latest.yml / latest.json）')
+} else {
+  // 没有 latest.yml 说明 publish 没配好，别让更新链路半残
+  fail(`没有生成 ${latestYml}，检查 electron-builder.yml 的 publish 配置`)
+}
 ok('tar + 安装包 + 服务端脚本')
 
 /* ---------- 5. 服务器推送 + 等 CI ---------- */

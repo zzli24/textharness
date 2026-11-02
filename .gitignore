@@ -14,3 +14,9 @@ site/downloads/
 *.dmg
 *.zip
 agent-ws/
+
+# Apple 签名材料（私钥/证书），绝不提交
+.secrets/
+*.p12
+*.cer
+*.key

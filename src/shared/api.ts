@@ -13,6 +13,7 @@ import type {
   ReplaceResult,
   SavedEditorState,
   ScriptRequest,
+  UpdateEvent,
   SaveResult,
   SearchOptions,
   SearchResult,
@@ -75,6 +76,11 @@ export interface ThApi {
     onTool(cb: (event: ToolEventPayload) => void): void
     onApproval(cb: (request: ApprovalRequest) => void): void
     approvalResult(id: string, ok: boolean): void
+    openUrl(url: string): Promise<void>
+    updateCheck(): Promise<void>
+    updateInstall(): Promise<void>
+    updateFeed(): Promise<string>
+    onUpdateEvent(cb: (event: UpdateEvent) => void): void
     onScriptApproval(cb: (request: ScriptRequest) => void): void
     onAccessRequest(cb: (request: AccessRequest) => void): void
     accessResult(id: string, decision: 'deny' | 'read' | 'write'): void
@@ -89,6 +95,8 @@ export interface ThApi {
     takePendingFile(): Promise<string | null>
     /** 拖入的 File 取绝对路径，取不到返回空串 */
     pathForFile(file: File): string
+    /** 用系统浏览器打开外部链接（仅 http/https） */
+    openUrl(url: string): Promise<void>
     /** 仅开发期存在 */
     debugAccess?(path: string, mode: 'read' | 'write'): Promise<'deny' | 'read' | 'write'>
   }

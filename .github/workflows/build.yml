@@ -34,7 +34,14 @@ jobs:
       - name: Package macOS
         run: npx electron-builder --mac --x64 --arm64 --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # 没配这些 Secrets 时为空字符串：after-sign 钩子会自动跳过公证
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # 有证书时让 electron-builder 自己签名（没证书就保持跳过，走 afterPack 的 ad-hoc）
+          CSC_IDENTITY_AUTO_DISCOVERY: true
 
       # 验证 ad-hoc 签名是否生效（没签名时 Gatekeeper 会报"已损坏"）
       - name: Verify code signature

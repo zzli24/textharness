@@ -736,6 +736,17 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
       taskBox.appendChild(row)
     }
 
+    // 自动检查更新：默认开；关掉后只在手动点状态栏时检查
+    const updateLabel = document.createElement('label')
+    updateLabel.className = 'set-check'
+    const updateBox = document.createElement('input')
+    updateBox.type = 'checkbox'
+    updateBox.checked = current.autoCheckUpdate !== false
+    const updateText = document.createElement('span')
+    updateText.textContent = '启动后自动检查新版本（Windows 会自动下载，重启后生效）'
+    updateLabel.append(updateBox, updateText)
+    parts.body.appendChild(updateLabel)
+
     parts.body.appendChild(taskBox)
 
     const cancel = button('取消')
@@ -761,6 +772,7 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
         llmModel: modelInput.value.trim(),
         llmApiKey: apiKeyInput.value.trim(),
         llmReasoning: reasoningSelect.value as AppConfig['llmReasoning'],
+        autoCheckUpdate: updateBox.checked,
         bgImage,
         bgPreset,
         bgOpacity,

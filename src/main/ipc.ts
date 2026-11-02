@@ -79,7 +79,17 @@ function guard(path: string): string {
   )
 }
 
-export function registerIpc(deps: IpcDeps): void {
+export interface UpdateBridge {
+  checkUpdateNow(): Promise<void>
+  quitAndInstallUpdate(): void
+  updateFeed(): string
+}
+
+export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
+  const checkUpdateNow = deps.checkUpdateNow ?? (async () => undefined)
+  const quitAndInstallUpdate = deps.quitAndInstallUpdate ?? (() => undefined)
+  const updateFeed = deps.updateFeed ?? (() => '')
+
   /* ---------- 配置 ---------- */
   ipcMain.handle('config:get', () => loadConfig())
 
@@ -500,6 +510,17 @@ export function registerIpc(deps: IpcDeps): void {
   })
 
   ipcMain.on('app:activity', () => deps.getScheduler()?.touch())
+
+  // 只允许 http/https，避免被当成任意协议处理器
+  ipcMain.handle('app:openUrl', async (_e, url: string) => {
+    if (!/^https?:\/\//i.test(url)) throw new Error('只支持 http/https 链接')
+    await shell.openExternal(url)
+  })
+
+  /* ---------- 自动更新 ---------- */
+  ipcMain.handle('update:check', () => checkUpdateNow())
+  ipcMain.handle('update:install', () => quitAndInstallUpdate())
+  ipcMain.handle('update:feed', () => updateFeed())
 
   /* ---------- 会话 ---------- */
   ipcMain.handle('sessions:list', () => listSessions())
