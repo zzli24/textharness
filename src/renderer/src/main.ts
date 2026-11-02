@@ -2374,6 +2374,7 @@ async function boot(): Promise<void> {
     (event) => {
       if (!(event.ctrlKey || event.metaKey)) return
       const key = event.key.toLowerCase()
+
       if (key === 's') {
         event.preventDefault()
         // 焦点在右栏就保存右栏，否则保存当前标签
