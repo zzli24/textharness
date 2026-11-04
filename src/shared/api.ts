@@ -13,6 +13,8 @@ import type {
   ReplaceResult,
   SavedEditorState,
   ScriptRequest,
+  SelectionInfo,
+  ToolListItem,
   UpdateEvent,
   SaveResult,
   SearchOptions,
@@ -38,6 +40,88 @@ export interface ThApi {
     patch(patch: Partial<AppConfig>): Promise<AppConfig>
     pickDirectory(): Promise<string | null>
   }
+  archive: {
+    categories(): Promise<string[]>
+    notes(): Promise<string[]>
+    headings(path: string): Promise<{
+      ok: boolean
+      headings: Array<{ level: number; text: string; line: number }>
+      text?: string
+    }>
+    append(
+      path: string,
+      section: string,
+      afterLine?: number
+    ): Promise<{
+      ok: boolean
+      path: string
+      text: string
+      undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+    }>
+    noteContent(path: string): Promise<{ ok: boolean; text: string }>
+    write(request: {
+      target: 'knowledge' | 'memory'
+      category?: string
+      title: string
+      content: string
+      memoryKind?: 'fact' | 'log' | 'template'
+      onConflict?: 'append' | 'overwrite' | 'rename'
+      source?: string
+    }): Promise<{
+      ok: boolean
+      path: string
+      undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+      text: string
+    }>
+    undo(undo: { path: string; action: 'delete' | 'restore'; previous?: string }): Promise<boolean>
+    resetGrant(): Promise<{ ok: boolean }>
+    draftList(): Promise<{ drafts: unknown[]; pending: number; workspace: string }>
+    draftCreate(input: {
+      title: string
+      content: string
+      target: 'knowledge' | 'memory'
+      category?: string
+      memoryKind?: 'fact' | 'log' | 'template'
+      source?: string
+      mergeInto?: string
+      summarize: boolean
+    }): Promise<{ draft: unknown; pending: number }>
+    draftUpdate(id: string, patch: { title?: string; content?: string }): Promise<{ draft: unknown; pending: number }>
+    draftDiscard(id: string): Promise<{ pending: number }>
+    draftConfirm(id: string, force?: boolean): Promise<{
+      ok: boolean
+      stale?: boolean
+      path?: string
+      text?: string
+      pending?: number
+      undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+    }>
+    draftRegenerate(id: string): Promise<{ ok: boolean; pending?: number; text?: string }>
+    onDraftChanged(cb: (payload: { pending: number }) => void): void
+  }
+  mcp: {
+    status(): Promise<
+      Array<{ name: string; enabled: boolean; command: string; connected: boolean; tools: number; error?: string }>
+    >
+    reconnect(name: string): Promise<
+      Array<{ name: string; enabled: boolean; command: string; connected: boolean; tools: number; error?: string }>
+    >
+  }
+  memory: {
+    snapshot(): Promise<{
+      facts: string
+      factsFull: string
+      recentLogs: string[]
+      exists: boolean
+      files: Array<{ path: string; size: number; mtime: number }>
+      templates: Array<{ path: string; title: string }>
+    }>
+    save(content: string): Promise<{ ok: boolean }>
+    ensure(): Promise<{ ok: boolean }>
+    reveal(): Promise<{ ok: boolean }>
+    buildSemantic(): Promise<{ ok: boolean; lines?: number; reason?: string }>
+    semanticStatus(): Promise<{ available: boolean; enabled: boolean; reason?: string }>
+  }
   fs: {
     tree(root: string): Promise<TreeNode[]>
     read(path: string, options?: { maxBytes?: number }): Promise<FileContent>
@@ -54,6 +138,7 @@ export interface ThApi {
     /** 用户手势授权：允许访问工作区外的这个文件 */
     allow(path: string): Promise<boolean>
     pickImage(): Promise<string | null>
+    pickImages(): Promise<string[]>
     importImage(sourcePath: string): Promise<{ path: string; name: string } | null>
     readImageData(sourcePath: string): Promise<{ dataUrl: string; name: string } | null>
     writeImage(dataUrl: string, originalName: string): Promise<{ path: string; name: string }>
@@ -66,16 +151,43 @@ export interface ThApi {
     save(input: { docPath: string | null; mime: string; bytes: Uint8Array }): Promise<string>
     info(): Promise<{ dir: string; today: string }>
   }
+  editor: {
+    onAppRpc(cb: (payload: { id: string; action: string; payload?: unknown }) => void): void
+    appReply(payload: { id: string; ok: boolean; data?: unknown; text: string }): void
+    debugApp?(action: string, payload?: unknown): Promise<{ ok: boolean; data?: unknown; text: string }>
+    onSelectionRequest(cb: (payload: { id: string }) => void): void
+    selectionReply(payload: SelectionInfo): void
+    onSelectionReplace(cb: (payload: { id: string; text: string; from: number; to: number }) => void): void
+    selectionReplaced(payload: { id: string; ok: boolean }): void
+  }
+  tools: {
+    list(): Promise<ToolListItem[]>
+  }
   ai: {
     model(): Promise<ModelInfo>
     models(): Promise<{ models: string[]; error?: string }>
-    chat(payload: { id: string; messages: ChatMessage[] }): Promise<{ id: string }>
+    chat(payload: { id: string; messages: ChatMessage[]; knowledgeMode?: boolean }): Promise<unknown>
     abort(id: string): void
     onDelta(cb: (delta: ChatDelta) => void): void
     onDone(cb: (done: ChatDone) => void): void
+    onUsage(cb: (usage: { prompt: number; completion: number; reasoning: number; cached: number; estimated: boolean }) => void): void
+    onRetry(cb: (payload: { attempt: number; reason: string }) => void): void
     onTool(cb: (event: ToolEventPayload) => void): void
     onApproval(cb: (request: ApprovalRequest) => void): void
     approvalResult(id: string, ok: boolean): void
+    onConfirm(
+      cb: (request: {
+        id: string
+        title: string
+        message: string
+        detail?: string
+        buttons: string[]
+        primaryId?: number
+        defaultId?: number
+        cancelId?: number
+      }) => void
+    ): void
+    replyConfirm(id: string, index: number): void
     openUrl(url: string): Promise<void>
     updateCheck(): Promise<void>
     updateInstall(): Promise<void>

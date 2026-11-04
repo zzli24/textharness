@@ -1,6 +1,10 @@
 import type { AppConfig } from '@shared/types'
 import { resolveModel } from './llm'
 import { TOOL_DEFS, buildSystemPrompt, runTool, type ToolContext } from './tools'
+import { callMcpTool, isMcpTool, mcpNeedsConfirm, mcpToolDefs } from './mcp'
+import { explainHttpError, fetchWithRetry } from './http'
+import { trace } from './logger'
+import type { MessageContent } from '@shared/types'
 
 /** OpenAI 风格的对话消息（tool_calls 字段结构比较松，这里用宽松类型） */
 export type AgentMessage = {
@@ -23,9 +27,22 @@ export interface ToolEvent {
   ms?: number
 }
 
+/** 一轮用的 token 用量（估算时 estimated=true） */
+export interface UsageDelta {
+  prompt: number
+  completion: number
+  reasoning: number
+  cached: number
+  estimated: boolean
+}
+
 export interface AgentEvents {
   onDelta(kind: 'content' | 'reasoning', text: string): void
   onTool(event: ToolEvent): void
+  /** 每次模型调用后回报用量 */
+  onUsage?(delta: UsageDelta): void
+  /** 自动重试时告诉界面（不让用户以为卡住） */
+  onRetry?(attempt: number, reason: string): void
 }
 
 export interface AgentOptions {
@@ -38,12 +55,15 @@ export interface AgentOptions {
   maxSteps?: number
   /** 只允许这些工具（定时任务用受限集合） */
   allowedTools?: string[]
+  /** 用户启用的工具（设置页里的开关）；不传则全部启用 */
+  enabledTools?: string[]
   /** 追加到系统提示词后面（任务专用指令） */
   systemExtra?: string
 }
 
 interface RoundResult {
   content: string
+  usage: UsageDelta | null
   /** 思考模式下模型输出的思考内容，必须原样回传 */
   reasoning: string
   calls: Array<{ id: string; name: string; args: string }>
@@ -54,35 +74,48 @@ async function streamRound(
   messages: AgentMessage[],
   tools: typeof TOOL_DEFS,
   signal: AbortSignal,
-  onDelta: AgentEvents['onDelta']
+  onDelta: AgentEvents['onDelta'],
+  events: AgentEvents
 ): Promise<RoundResult> {
-  const res = await fetch(`${model.baseURL}/chat/completions`, {
-    method: 'POST',
-    signal,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${model.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model.model,
-      messages,
-      tools,
-      tool_choice: 'auto',
-      stream: true,
-      max_tokens: 4096,
-      temperature: 0.2,
-      // 只有用户显式选了推理等级才带这个字段：
-      // 部分中转/厂商不支持时会因为未知参数直接 400
-      ...(model.reasoning && model.reasoning !== 'auto'
-        ? { reasoning_effort: model.reasoning }
-        : {}),
-    }),
+  const body = JSON.stringify({
+    model: model.model,
+    messages,
+    tools,
+    tool_choice: 'auto',
+    stream: true,
+    max_tokens: 4096,
+    temperature: 0.2,
+    // 让服务端在流的最后一个 chunk 里带上 usage（DeepSeek/OpenAI 兼容）
+    stream_options: { include_usage: true },
+    // 只有用户显式选了推理等级才带这个字段：
+    // 部分中转/厂商不支持时会因为未知参数直接 400
+    ...(model.reasoning && model.reasoning !== 'auto' ? { reasoning_effort: model.reasoning } : {}),
   })
 
-  if (!res.ok || !res.body) {
-    const detail = await res.text().catch(() => '')
-    throw new Error(`模型接口返回 ${res.status}：${detail.slice(0, 300)}`)
+  let res: Response
+  try {
+    res = await fetchWithRetry(
+      `${model.baseURL}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${model.apiKey}`,
+        },
+        body,
+      },
+      {
+        signal,
+        retries: 2,
+        timeoutMs: 180_000,
+        onRetry: (attempt, reason) => events.onRetry?.(attempt, reason),
+      }
+    )
+  } catch (err) {
+    throw new Error(explainHttpError(err))
   }
+
+  if (!res.body) throw new Error('模型接口没有返回数据流')
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -90,6 +123,7 @@ async function streamRound(
   let content = ''
   let reasoning = ''
   let buffer = ''
+  let reportedUsage: UsageDelta | null = null
 
   const handlePacket = (payload: string): void => {
     if (!payload || payload === '[DONE]') return
@@ -107,6 +141,25 @@ async function streamRound(
     } catch {
       return
     }
+    // 用量：有的厂商放在最后一个 chunk，choices 为空
+    const usage = (json as {
+      usage?: {
+        prompt_tokens?: number
+        completion_tokens?: number
+        prompt_cache_hit_tokens?: number
+        completion_tokens_details?: { reasoning_tokens?: number }
+      }
+    }).usage
+    if (usage) {
+      reportedUsage = {
+        prompt: usage.prompt_tokens ?? 0,
+        completion: usage.completion_tokens ?? 0,
+        reasoning: usage.completion_tokens_details?.reasoning_tokens ?? 0,
+        cached: usage.prompt_cache_hit_tokens ?? 0,
+        estimated: false,
+      }
+    }
+
     const delta = json.choices?.[0]?.delta
     if (!delta) return
     if (delta.reasoning_content) {
@@ -142,9 +195,21 @@ async function streamRound(
     }
   }
 
+  // 服务端没给 usage（部分中转不给）就按字符粗估：中文约 1 token/字，英文约 4 字符/token
+  const estimate = (text: string): number => Math.ceil(text.length / 2.6)
+  const usage: UsageDelta =
+    reportedUsage ?? {
+      prompt: estimate(messages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('')),
+      completion: estimate(content) + estimate(reasoning),
+      reasoning: estimate(reasoning),
+      cached: 0,
+      estimated: true,
+    }
+
   return {
     content,
     reasoning,
+    usage,
     calls: [...calls.values()].filter((c) => c.name).map((c) => ({ ...c, id: c.id || `call_${Math.random().toString(36).slice(2)}` })),
   }
 }
@@ -163,14 +228,48 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
   }
 
   const maxSteps = opts.maxSteps ?? 16
-  const tools = opts.allowedTools
-    ? TOOL_DEFS.filter((tool) => opts.allowedTools!.includes(tool.function.name))
-    : TOOL_DEFS
+  const enabled = opts.enabledTools ? new Set(opts.enabledTools) : null
+  // MCP 外部工具：不吃内置的 enabledTools 开关，统一并进来
+  const externalTools = mcpToolDefs()
+  type AnyToolDef = (typeof TOOL_DEFS)[number]
+  const allTools: AnyToolDef[] = [...TOOL_DEFS, ...(externalTools as unknown as AnyToolDef[])]
+  const builtinTools = allTools.filter((tool) => {
+    if (isMcpTool(tool.function.name)) return false
+    const name = tool.function.name
+    if (opts.allowedTools && !opts.allowedTools.includes(name)) return false
+    if (enabled && !enabled.has(name)) return false
+    return true
+  })
+
+  // MCP 工具不吃 enabledTools，但同样受「工具上限」约束：
+  // 服务器挂多了会把提示词撑爆，按上限截断并告知模型
+  const cap = Math.max(5, Math.min(60, opts.cfg.toolCap ?? 35))
+  const remaining = Math.max(0, cap - builtinTools.length)
+  const mcpCap = externalTools.slice(0, remaining)
+  const cappedOut = externalTools.length - mcpCap.length
+  if (cappedOut > 0) {
+    trace(`MCP 工具按上限截断：${mcpCap.length}/${externalTools.length}（上限 ${cap}）`)
+  }
+  const tools = [...builtinTools, ...(mcpCap as unknown as AnyToolDef[])]
   const allowed = new Set(tools.map((tool) => tool.function.name))
 
+  // 身份说明：不写清楚的话，模型被问"你是什么模型"时会瞎猜（实测自称 Claude）
+  const identity = [
+    '',
+    '身份说明：',
+    `- 你运行在用户配置的模型上：${model.model}（凭据来源：${model.origin}）。`,
+    '- 被问到"你是什么模型 / 谁做的"时，如实回答驱动你的模型名，不要自称 GPT、Claude、Gemini 等其他厂商的模型。',
+    '- 如果确实无法确定底层实现，就说"我由用户在设置里配置的模型驱动"，不要编造厂商。',
+  ].join('\n')
+
+  const capNote =
+    cappedOut > 0
+      ? `\n\n提示：本轮 MCP 工具太多，只挂了 ${mcpCap.length} 个（共 ${externalTools.length} 个），其余请减少服务器数量或在设置里调高工具上限。`
+      : ''
+
   const systemPrompt = opts.systemExtra
-    ? `${buildSystemPrompt(opts.toolContext)}\n\n${opts.systemExtra}`
-    : buildSystemPrompt(opts.toolContext)
+    ? `${buildSystemPrompt(opts.toolContext)}\n\n${opts.systemExtra}${identity}${capNote}`
+    : `${buildSystemPrompt(opts.toolContext)}${identity}${capNote}`
 
   const messages: AgentMessage[] = [{ role: 'system', content: systemPrompt }, ...opts.messages]
   /** 连续相同工具调用计数：模型打转时提前收尾，别把步数耗光 */
@@ -180,7 +279,8 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
   for (let step = 1; step <= maxSteps; step++) {
     let round: RoundResult
     try {
-      round = await streamRound(model, messages, tools, opts.signal, opts.events.onDelta)
+      round = await streamRound(model, messages, tools, opts.signal, opts.events.onDelta, opts.events)
+      if (round.usage) opts.events.onUsage?.(round.usage)
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err)
       // 思考模式下，历史里没有 reasoning_content 的 assistant 轮次会被网关拒掉。
@@ -190,7 +290,8 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
         if (sanitized.length !== messages.length) {
           messages.length = 0
           messages.push(...sanitized)
-          round = await streamRound(model, messages, tools, opts.signal, opts.events.onDelta)
+          round = await streamRound(model, messages, tools, opts.signal, opts.events.onDelta, opts.events)
+      if (round.usage) opts.events.onUsage?.(round.usage)
         } else {
           throw new Error(
             '这个模型要求把历史消息里的「思考过程」一并回传，但当前会话的历史里没有。\n' +
@@ -239,7 +340,23 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
       }
 
       const result = allowed.has(call.name)
-        ? await runTool(call.name, parsed, opts.toolContext)
+        ? isMcpTool(call.name)
+          ? await (async () => {
+              const server = call.name.slice(0, call.name.indexOf('__'))
+              const serverConfig = opts.cfg.mcpServers?.find((item) => item.name === server)
+              if (mcpNeedsConfirm(serverConfig, call.name)) {
+                const yes = opts.toolContext.confirmMcpCall
+                  ? await opts.toolContext.confirmMcpCall(server, call.name, parsed)
+                  : false
+                if (!yes) return { ok: false, text: '用户拒绝了这次 MCP 工具调用，别重试，换个做法或直接回答。' }
+              }
+              try {
+                return { ok: true, text: await callMcpTool(call.name, parsed as Record<string, unknown>) }
+              } catch (err) {
+                return { ok: false, text: err instanceof Error ? err.message : String(err) }
+              }
+            })()
+          : await runTool(call.name, parsed, opts.toolContext)
         : { ok: false, text: `当前任务不允许使用工具 ${call.name}` }
 
       opts.events.onTool({

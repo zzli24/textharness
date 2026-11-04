@@ -14,6 +14,16 @@ LOG=/root/release.log
 
 say() { echo "$@" | tee -a "$LOG"; }
 
+# 早期失败也要写结果文件，否则本地会一直等到 45 分钟超时
+fail_fast() {
+  say "FAILED=$1"
+  echo "FAILED=$1" >> "$RESULT"
+  say "REASON=$2"
+  echo "REASON=$2" >> "$RESULT"
+  rm -f /tmp/.ghtok
+  exit 1
+}
+
 say "=== 1. 导入新代码 ($VERSION) ==="
 cd "$WORK" || { say "仓库目录不存在"; exit 1; }
 rm -rf /tmp/newtree && mkdir -p /tmp/newtree
@@ -49,6 +59,10 @@ for i in 1 2 3; do
   sleep 6
 done
 
+if [ $code -ne 0 ]; then
+  fail_fast "MAIN_PUSH_FAILED" "main 分支推送失败"
+fi
+
 say "=== 3. 打 tag v$VERSION ==="
 git tag -f "v$VERSION" >/dev/null 2>&1
 for i in 1 2 3; do
@@ -60,9 +74,7 @@ done
 git remote set-url origin https://github.com/zzli24/textharness.git
 
 if [ $code -ne 0 ]; then
-  say "TAG_PUSH_FAILED"
-  rm -f /tmp/.ghtok
-  exit 1
+  fail_fast "TAG_PUSH_FAILED" "标签 v$VERSION 推送失败（多半是网络或凭据问题）"
 fi
 
 say "=== 4. 等待 CI ==="
@@ -72,9 +84,7 @@ RUN=$(curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.gith
       | python3 -c "import sys,json;d=json.load(sys.stdin);rs=[r for r in d['workflow_runs'] if r['head_branch']=='v$VERSION'];print(rs[0]['id'] if rs else '')")
 
 if [ -z "$RUN" ]; then
-  say "找不到 v$VERSION 的 CI run"
-  rm -f /tmp/.ghtok
-  exit 1
+  fail_fast "NO_CI_RUN" "找不到 v$VERSION 的 CI run"
 fi
 say "  run id = $RUN"
 echo "RUN_ID=$RUN" >> "$RESULT"

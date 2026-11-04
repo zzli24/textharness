@@ -1,3 +1,5 @@
+import { fileIconEl } from './fileIcons'
+import { setBaselineEffect } from './editorDiff'
 import type { EditorState } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import type {
@@ -14,9 +16,13 @@ import { redo, undo } from '@codemirror/commands'
 import { openSearchPanel as openInTextPanel } from '@codemirror/search'
 import * as ed from './editor'
 import { createTree, type TreeApi } from './tree'
-import { askTable, askText, confirmDialog, createModal, openSettings } from './dialogs'
+import { askTable, askText, confirmDialog, createModal, openMcpAddDialog, openSettings } from './dialogs'
+import { openArchivePanel } from './archivePanel'
+import { openDraftsPanel } from './draftsPanel'
 import { openDiff } from './diffView'
 import { requestAccess, requestScriptApproval } from './approval'
+import { describeChange } from './recipes'
+import { closeToolsPanel, openToolsPanel } from './toolsPanel'
 import { createGrid, detectDelimiter, markdownToRows, rowsToMarkdown, type GridApi } from './gridView'
 import { createChat, type ChatApi } from './aiChat'
 
@@ -171,6 +177,19 @@ function setupSelectionDebug(): void {
     panel.textContent = lines.join('\n')
   }
 
+  // Ctrl+Alt+A：把编辑器选区送进归档面板
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (!event.ctrlKey || !event.altKey || event.key.toLowerCase() !== 'a') return
+      const target = event.target as HTMLElement | null
+      if (target && (target.closest('#ai-composer') || target.closest('.modal') || target.closest('.overlay'))) return
+      event.preventDefault()
+      archiveSelection()
+    },
+    true
+  )
+
   document.addEventListener(
     'keydown',
     (event) => {
@@ -266,6 +285,13 @@ const TRUNCATE_BYTES = 3 * 1024 * 1024
 function hooksFor(doc: Doc): ed.EditorHooks {
   return {
     getDocPath: () => doc.path,
+    isInWorkspace: (path: string) => {
+      // 统一分隔符再比：外部传进来的路径可能用 /，工作区配置里是 \
+      const norm = (value: string) => value.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+      const root = norm(cfg.workspaceRoot)
+      const target = norm(path)
+      return target === root || target.startsWith(`${root}/`)
+    },
     getBaseDirs: () =>
       // 已保存文档先按所在目录解析；再退回工作区根，
       // 这样「.assets/img/...」和「../.assets/img/...」两种写法都能命中
@@ -457,7 +483,7 @@ function renderTabs(): void {
   tabs.textContent = ''
   for (const doc of docs) {
     const tab = document.createElement('div')
-    tab.className = doc.id === activeId ? 'tab active' : 'tab'
+    tab.className = [doc.id === activeId ? 'tab active' : 'tab', doc.dirty ? 'dirty' : ''].filter(Boolean).join(' ')
     tab.title = doc.path ?? '未保存的临时文件'
 
     const title = document.createElement('span')
@@ -465,6 +491,8 @@ function renderTabs(): void {
     const isExternal = !!doc.path && !doc.path.toLowerCase().startsWith(cfg.workspaceRoot.toLowerCase())
     title.textContent = `${doc.dirty ? '● ' : ''}${isExternal ? '↗ ' : ''}${doc.title}`
     if (isExternal) tab.title = `工作区外文件：${doc.path}`
+
+    tab.appendChild(fileIconEl(doc.path ?? doc.title, false, 13))
 
     const close = document.createElement('button')
     close.className = 'close'
@@ -750,7 +778,95 @@ async function openExternal(path: string): Promise<void> {
     toast(errorMessage(err))
   }
 }
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i
+
+/** 图片文件的预览（不塞进编辑器，避免二进制报错） */
+async function openImagePreview(path: string): Promise<void> {
+  const data = await window.th.fs.readImageData(path)
+  if (!data) {
+    toast('读不到这张图')
+    return
+  }
+  const overlay = document.createElement('div')
+  overlay.className = 'overlay'
+  const modal = document.createElement('div')
+  modal.className = 'modal image-preview'
+
+  const head = document.createElement('div')
+  head.className = 'image-preview-head'
+  const name = document.createElement('strong')
+  name.textContent = data.name
+  const spacer = document.createElement('span')
+  spacer.style.flex = '1'
+  const close = document.createElement('button')
+  close.className = 'icon-btn'
+  close.textContent = '✕'
+  close.addEventListener('click', () => overlay.remove())
+  head.append(name, spacer, close)
+
+  const body = document.createElement('div')
+  body.className = 'image-preview-body'
+  const img = document.createElement('img')
+  img.src = data.dataUrl
+  img.alt = data.name
+  body.appendChild(img)
+
+  const foot = document.createElement('div')
+  foot.className = 'archive-foot'
+  const hint = document.createElement('span')
+  hint.className = 'archive-hint'
+  hint.textContent = baseName(path)
+  img.addEventListener('load', () => {
+    void window.th.fs.stat(path).then((stat) => {
+      const kb = stat.exists ? Math.max(1, Math.round(stat.size / 1024)) : 0
+      hint.textContent = `${img.naturalWidth}×${img.naturalHeight}${kb ? ` · ${kb} KB` : ''}`
+    })
+  })
+  const asBg = document.createElement('button')
+  asBg.className = 'btn small'
+  asBg.textContent = '设为背景'
+  asBg.addEventListener('click', async () => {
+    // 背景图只认工作区内的相对路径：外面的图先导入 .assets
+    let rel = path
+    const root = cfg.workspaceRoot.replace(/\\/g, '/')
+    const normalized = path.replace(/\\/g, '/')
+    if (normalized.startsWith(root)) {
+      rel = normalized.slice(root.length + 1)
+    } else {
+      const imported = await window.th.fs.importImage(path)
+      if (!imported) {
+        toast('导入图片失败')
+        return
+      }
+      rel = imported.path
+    }
+    const updated = { ...cfg, bgImage: rel, bgPreset: 0, bgOpacity: 0.6 }
+    cfg = updated
+    applyBackground(updated)
+    void window.th.config.patch({ bgImage: rel, bgPreset: 0, bgOpacity: 0.6 })
+    overlay.remove()
+    toast('已设为背景')
+  })
+  const reveal = document.createElement('button')
+  reveal.className = 'btn small'
+  reveal.textContent = '在资源管理器显示'
+  reveal.addEventListener('click', () => void window.th.fs.reveal(path))
+  foot.append(hint, asBg, reveal)
+
+  modal.append(head, body, foot)
+  overlay.appendChild(modal)
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) overlay.remove()
+  })
+  document.body.appendChild(overlay)
+}
+
 async function openPath(path: string, line?: number): Promise<void> {
+  // 图片走预览，不进编辑器（二进制内容会报错）
+  if (IMAGE_EXT.test(path)) {
+    await openImagePreview(path)
+    return
+  }
   const existing = docs.find((d) => d.path === path)
   if (existing) {
     openDoc(existing)
@@ -864,6 +980,12 @@ async function saveDoc(doc: Doc | null, saveAs = false): Promise<boolean> {
     doc.path = target
     doc.title = baseName(target)
     doc.dirty = false
+    // 保存成功：改动标记的基线推进到刚写入的内容
+    if (doc.id === activeId) {
+      view.dispatch({ effects: setBaselineEffect.of(text) })
+    } else {
+      doc.state = ed.withBaseline(doc.state, text)
+    }
     doc.readonly = false
     // 刷新磁盘快照，否则自己的保存会被误判成"外部修改"
     try {
@@ -922,6 +1044,9 @@ function splitHooks(doc: Doc): ed.EditorHooks {
 }
 
 function closeSplitNow(): void {
+  $('split-resizer').hidden = true
+  $('pane-left').style.flex = ''
+  $('pane-right').style.flex = ''
   splitView?.destroy()
   splitView = null
   splitDoc = null
@@ -970,6 +1095,89 @@ function ensureLeftHead(): HTMLElement {
 }
 
 /** 用已经打开的文档填右栏（拖标签时用，保留未保存的编辑内容） */
+/* 并排编辑：右栏宽度可拖动，比例记在配置里 */
+const SPLIT_MIN_LEFT = 320
+const SPLIT_MIN_RIGHT = 300
+
+function clampSplitRatio(ratio: number): number {
+  const host = $('editor-host').getBoundingClientRect().width || 1
+  const minLeft = Math.min(SPLIT_MIN_LEFT / host, 0.35)
+  const minRight = Math.min(SPLIT_MIN_RIGHT / host, 0.35)
+  return Math.min(Math.max(ratio, minLeft), 1 - minRight)
+}
+
+function applySplitRatio(ratio = cfg.splitRatio ?? 0.5): void {
+  const left = $('pane-left')
+  const right = $('pane-right')
+  const resizer = $('split-resizer')
+  if (right.hidden) return
+  const value = clampSplitRatio(ratio)
+  // 用 flex-basis 控制，左栏自动让位，窗口缩放时也按比例保持
+  left.style.flex = `1 1 ${(1 - value) * 100}%`
+  right.style.flex = `0 0 ${value * 100}%`
+  resizer.hidden = false
+}
+
+function setupSplitResizer(): void {
+  const resizer = $('split-resizer')
+  const host = $('editor-host')
+
+  const drag = (event: PointerEvent): void => {
+    event.preventDefault()
+    resizer.setPointerCapture(event.pointerId)
+    resizer.classList.add('dragging')
+    document.body.classList.add('split-dragging')
+
+    const rect = host.getBoundingClientRect()
+    const move = (moveEvent: PointerEvent): void => {
+      const ratio = (rect.right - moveEvent.clientX) / rect.width
+      applySplitRatio(ratio)
+    }
+    const up = (): void => {
+      resizer.classList.remove('dragging')
+      document.body.classList.remove('split-dragging')
+      resizer.removeEventListener('pointermove', move)
+      resizer.removeEventListener('pointerup', up)
+      resizer.removeEventListener('pointercancel', up)
+      // 松手才写配置，避免拖动过程里频繁落盘
+      const width = $('pane-right').getBoundingClientRect().width
+      const total = host.getBoundingClientRect().width || 1
+      const ratio = Math.round((width / total) * 100) / 100
+      cfg = { ...cfg, splitRatio: ratio }
+      void window.th.config.patch({ splitRatio: ratio })
+    }
+
+    resizer.addEventListener('pointermove', move)
+    resizer.addEventListener('pointerup', up)
+    resizer.addEventListener('pointercancel', up)
+  }
+
+  // pointerdown 里 preventDefault 会把 dblclick 吞掉，双击复位自己判
+  const reset = (): void => {
+    applySplitRatio(0.5)
+    cfg = { ...cfg, splitRatio: 0.5 }
+    void window.th.config.patch({ splitRatio: 0.5 })
+  }
+  let lastDownAt = 0
+  resizer.addEventListener('pointerdown', (event) => {
+    const now = Date.now()
+    if (now - lastDownAt < 350) {
+      lastDownAt = 0
+      reset()
+      return
+    }
+    lastDownAt = now
+    drag(event)
+  })
+  // 窗口缩放时重新夹紧，别让某一栏缩到看不见
+  window.addEventListener('resize', () => {
+    if (!splitIsOpen()) return
+    const total = host.getBoundingClientRect().width || 1
+    const width = $('pane-right').getBoundingClientRect().width
+    applySplitRatio(width / total)
+  })
+}
+
 function openSplitDoc(doc: Doc): void {
   if (doc.kind !== 'text') {
     toast('表格文档暂时只能开在左侧')
@@ -994,6 +1202,7 @@ function openSplitDoc(doc: Doc): void {
   const leftDoc = activeDoc()
   if (leftTitle && leftDoc) leftTitle.textContent = baseName(leftDoc.path ?? leftDoc.title)
   $('pane-right').hidden = false
+  applySplitRatio()
   $('split-title').textContent = doc.title
   $('split-title').title = doc.path ?? ''
   $('split-dirty').hidden = !doc.dirty
@@ -1036,6 +1245,7 @@ async function openSplitFile(path: string): Promise<void> {
     const leftDoc = activeDoc()
     if (leftTitle && leftDoc) leftTitle.textContent = baseName(leftDoc.path ?? leftDoc.title)
     $('pane-right').hidden = false
+    applySplitRatio()
     $('split-title').textContent = baseName(path)
     $('split-title').title = path
     $('split-dirty').hidden = true
@@ -1092,9 +1302,14 @@ function setupDropZone(): void {
     return x > rect.left + rect.width * 0.62
   }
 
+    const insideComposer = (target: EventTarget | null): boolean =>
+      target instanceof Element && !!target.closest('#ai-composer')
+
   main.addEventListener(
     'dragover',
     (event) => {
+      // 落在 AI 输入区的拖拽交给聊天框自己处理（附图），不要当文件打开
+      if (insideComposer(event.target)) return
       const types = Array.from(event.dataTransfer?.types ?? [])
       if (!types.includes('application/x-th-path') && !types.includes('application/x-th-tab') && !types.includes('Files')) return
       event.preventDefault()
@@ -1116,12 +1331,23 @@ function setupDropZone(): void {
   main.addEventListener(
     'drop',
     (event) => {
+      const droppedFiles = Array.from(event.dataTransfer?.files ?? [])
+      const onlyImages =
+        droppedFiles.length > 0 &&
+        droppedFiles.every(
+          (file) => /^image\//.test(file.type) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name)
+        )
+      // 输入框里的拖放由对话面板自己处理：
+      //  - 图片：加附件
+      //  - 文本/页签：不拦
+      // 但「把 .sql 之类的文件拖进输入框」应该当打开文件处理，不能直接吃掉
+      if (insideComposer(event.target) && (droppedFiles.length === 0 || onlyImages)) return
       const tabId = event.dataTransfer?.getData('application/x-th-tab') ?? ''
       const path = event.dataTransfer?.getData('application/x-th-path') ?? ''
       main.classList.remove('drop-target')
 
       // 从资源管理器拖进来的真实文件：先授权再打开（工作区外的文件也允许）
-      const dropped = Array.from(event.dataTransfer?.files ?? [])
+      const dropped = droppedFiles
       if (!tabId && !path && dropped.length > 0) {
         event.preventDefault()
         event.stopPropagation()
@@ -1210,8 +1436,10 @@ async function checkExternalChanges(): Promise<void> {
         const choice = await confirmDialog({
           title: '文件已被修改',
           message: `${doc.title} 在磁盘上被其他程序修改了。`,
-          detail: '你本地也有未保存的修改，重新加载会丢弃它们。',
+          detail: '你本地也有未保存的修改：重新加载会用磁盘上的版本覆盖（本地改动丢失），保留则继续用你改的版本。',
           buttons: ['保留本地修改', '重新加载'],
+          // 蓝色给「重新加载」；回车/Esc 仍是保留本地，避免手滑丢改动
+          primaryId: 1,
           defaultId: 0,
           cancelId: 0,
         })
@@ -1708,6 +1936,26 @@ async function newGridFromDialog(): Promise<void> {
   if (!spec) return
   newGridDoc(spec.rows, spec.cols)
 }
+/** 编辑器选区 → 归档面板（Ctrl+Alt+A） */
+function archiveSelection(): void {
+  const sel = view.state.selection.main
+  if (sel.empty) {
+    toast('先选中要归档的内容')
+    return
+  }
+  const text = view.state.sliceDoc(sel.from, sel.to)
+  const firstLine = text.split('\n').find((line) => line.trim().length > 0) ?? ''
+  openArchivePanel(
+    {
+      target: 'knowledge',
+      title: firstLine.replace(/^#+\s*/, '').trim().slice(0, 30),
+      content: text,
+      source: 'editor',
+    },
+    { toast: (message: string) => toast(message) }
+  )
+}
+
 function showEditorMenu(event: MouseEvent): void {
   event.preventDefault()
   const columnOn = ed.isColumnMode()
@@ -1720,6 +1968,8 @@ function showEditorMenu(event: MouseEvent): void {
     ['---', () => undefined],
     ['撤消', () => undo(view)],
     ['重做', () => redo(view)],
+    ['---', () => undefined],
+    ['归档选中内容…', archiveSelection],
     ['---', () => undefined],
     ['新建表格标签', () => void newGridFromDialog()],
     ['在本文中查找 / 替换', () => openInTextSearch()],
@@ -1863,6 +2113,11 @@ function fillMenu(box: HTMLElement, items: MenuItem[], depth: number): void {
         const left = rect.right + width + 8 > window.innerWidth ? rect.left - width - 2 : rect.right + 2
         sub.style.left = `${Math.max(4, left)}px`
         sub.style.top = `${Math.max(4, Math.min(rect.top - 4, window.innerHeight - sub.offsetHeight - 8))}px`
+        if (sub.offsetHeight > window.innerHeight - 16) {
+          sub.style.maxHeight = `${window.innerHeight - 16}px`
+          sub.style.overflowY = 'auto'
+          sub.style.top = '8px'
+        }
       }
 
       btn.addEventListener('mouseenter', openChildren)
@@ -1894,7 +2149,25 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
   fillMenu(el, items, 0)
   el.style.left = `${x}px`
   el.style.top = `${y}px`
+  el.style.visibility = 'hidden'
   document.body.appendChild(el)
+
+  // 贴边修正：右边放不下就往左收，下面放不下就往上翻（原来直接被窗口裁掉）
+  const margin = 6
+  const rect = el.getBoundingClientRect()
+  const maxLeft = window.innerWidth - rect.width - margin
+  const maxTop = window.innerHeight - rect.height - margin
+  el.style.left = `${Math.max(margin, Math.min(x, maxLeft))}px`
+  el.style.top = `${Math.max(margin, Math.min(y, maxTop))}px`
+
+  // 菜单比窗口还高时，限制高度并允许滚动
+  if (rect.height > window.innerHeight - margin * 2) {
+    el.style.maxHeight = `${window.innerHeight - margin * 2}px`
+    el.style.overflowY = 'auto'
+    el.style.top = `${margin}px`
+  }
+
+  el.style.visibility = 'visible'
   menu = el
 }
 
@@ -2236,6 +2509,233 @@ async function boot(): Promise<void> {
   /* 双栏编辑：右侧栏的保存/关闭 + 拖拽落点 */
   $('split-save').addEventListener('click', () => void saveSplit())
   $('split-close').addEventListener('click', () => closeSplit())
+  /* ---------- 应用控制：agent 操作编辑器本身 ---------- */
+  window.th.editor.onAppRpc(({ id, action, payload }) => {
+    const reply = (ok: boolean, text: string, data?: unknown): void => {
+      window.th.editor.appReply({ id, ok, text, data })
+    }
+
+    try {
+      switch (action) {
+        case 'state': {
+          const tabs = docs.map((doc) => ({
+            title: doc.title,
+            path: doc.path,
+            dirty: doc.dirty,
+            active: doc.id === activeId,
+            kind: doc.kind,
+          }))
+          const sel = view.state.selection.main
+          const active = activeDoc()
+          const info = {
+            tabs,
+            activeTab: active ? { title: active.title, path: active.path, dirty: active.dirty } : null,
+            cursor: { line: view.state.doc.lineAt(sel.head).number, column: sel.head - view.state.doc.lineAt(sel.head).from + 1 },
+            selection: sel.empty ? '' : view.state.sliceDoc(sel.from, sel.to).slice(0, 500),
+            docLines: view.state.doc.lines,
+            settings: {
+              theme: cfg.theme,
+              bgPreset: cfg.bgPreset,
+              bgOpacity: cfg.bgOpacity,
+              bgBlur: cfg.bgBlur,
+              bgDim: cfg.bgDim,
+              splitRatio: cfg.splitRatio,
+              workspace: cfg.workspaceRoot,
+            },
+            ui: { splitOpen: splitIsOpen(), aiOpen: !$('app').classList.contains('ai-collapsed') },
+          }
+          const lines = [
+            `当前有 ${tabs.length} 个标签：`,
+            ...tabs.map((tab, index) => `  ${index + 1}. ${tab.active ? '▶ ' : '  '}${tab.title}${tab.dirty ? '（未保存）' : ''}${tab.path ? `  ${tab.path}` : ''}`),
+            `主题：${cfg.theme === 'dark' ? '深色' : '浅色'}；背景预设：${cfg.bgPreset > 0 ? cfg.bgPreset : '无'}；不透明度 ${Math.round(cfg.bgOpacity * 100)}%`,
+            `工作区：${cfg.workspaceRoot}`,
+            `分栏：${splitIsOpen() ? '开' : '关'}；AI 面板：${$('app').classList.contains('ai-collapsed') ? '收起' : '展开'}`,
+            `当前文档：${view.state.doc.lines} 行，光标第 ${info.cursor.line} 行`,
+          ]
+          reply(true, lines.join('\n'), info)
+          return
+        }
+
+        case 'setAppearance': {
+          const patch = (payload ?? {}) as Partial<AppConfig>
+          const next: AppConfig = { ...cfg, ...patch }
+          cfg = next
+          applyTheme(next.theme)
+          applyBackground(next)
+          void window.th.config.patch(patch)
+          const parts: string[] = []
+          if (patch.theme) parts.push(`主题 → ${patch.theme === 'dark' ? '深色' : '浅色'}`)
+          if (typeof patch.bgImage === 'string') {
+            parts.push(patch.bgImage ? `背景图 → ${patch.bgImage.split(/[\\/]/).pop()}` : '背景图 → 已清除')
+          }
+          if (typeof patch.bgPreset === 'number') parts.push(`背景 → ${patch.bgPreset === 0 ? '无' : `预设 ${patch.bgPreset}`}`)
+          if (typeof patch.bgOpacity === 'number') parts.push(`不透明度 → ${Math.round(patch.bgOpacity * 100)}%`)
+          if (typeof patch.bgBlur === 'number') parts.push(`模糊 → ${patch.bgBlur}px`)
+          if (typeof patch.bgDim === 'number') parts.push(`暗化 → ${Math.round(patch.bgDim * 100)}%`)
+          reply(true, `已修改：${parts.join('，') || '（无变化）'}`)
+          return
+        }
+
+        case 'closeTabs': {
+          const { scope, pattern, includeDirty } = (payload ?? {}) as {
+            scope: 'today' | 'others' | 'all' | 'match'
+            pattern?: string
+            includeDirty?: boolean
+          }
+          const today = new Date()
+          const stamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+          const matched = docs.filter((doc) => {
+            if (scope === 'all') return true
+            if (scope === 'others') return doc.id !== activeId
+            if (scope === 'match') {
+              const needle = (pattern ?? '').toLowerCase()
+              if (!needle) return false
+              return `${doc.title}`.toLowerCase().includes(needle) || (doc.path ?? '').toLowerCase().includes(needle)
+            }
+            // today：路径里带日期目录，或者今天新建的未保存文档
+            return (doc.path ?? '').includes(stamp) || (!doc.path && doc.dirty)
+          })
+
+          const closed: string[] = []
+          const skipped: string[] = []
+          for (const doc of matched) {
+            if (doc.dirty && !includeDirty) {
+              skipped.push(doc.title)
+              continue
+            }
+            const index = docs.findIndex((d) => d.id === doc.id)
+            if (index < 0) continue
+            docs.splice(index, 1)
+            closed.push(doc.title)
+            if (activeId === doc.id) {
+              activeId = null
+              const next = docs[Math.min(index, docs.length - 1)]
+              if (next) openDoc(next)
+            }
+          }
+          if (docs.length === 0) openDoc(makeUntitled())
+          renderTabs()
+          updateStatus()
+          pushDirty()
+          schedulePersist()
+
+          const summary = [
+            closed.length > 0 ? `关闭了 ${closed.length} 个：${closed.join('、')}` : '没有关闭任何标签',
+            skipped.length > 0 ? `跳过 ${skipped.length} 个未保存的：${skipped.join('、')}` : '',
+          ]
+            .filter(Boolean)
+            .join('；')
+          reply(true, summary)
+          return
+        }
+
+        case 'proposeMcp': {
+          const mcpPayload = (payload ?? {}) as { json?: string }
+          openMcpAddDialog({
+            initialJson: mcpPayload.json,
+            commit: (servers: Array<{ name: string; command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string>; transport?: 'stdio' | 'http' | 'sse' }>) => {
+              void (async () => {
+                const current = await window.th.config.get()
+                const next = [...(current.mcpServers ?? [])]
+                for (const server of servers) {
+                  const index = next.findIndex((item) => item.name === server.name)
+                  const entry = { ...server, enabled: true, policy: 'confirm-write' as const }
+                  if (index >= 0) next[index] = { ...next[index], ...entry }
+                  else next.push(entry)
+                }
+                await window.th.config.patch({ mcpServers: next })
+                toast(`已添加 ${servers.length} 台 MCP 服务器，正在连接…`)
+                const status = await window.th.mcp.reconnect('')
+                const failed = status.filter((item) => !item.connected)
+                toast(
+                  failed.length === 0
+                    ? 'MCP 服务器已连接'
+                    : `有 ${failed.length} 台没连上：${failed.map((item) => item.name).join('、')}（设置里可看错误）`
+                )
+              })()
+            },
+          })
+          return { ok: true, text: '已打开 MCP 添加确认框' }
+        }
+        case 'proposeArchive': {
+          const p = (payload ?? {}) as {
+            target?: 'knowledge' | 'memory'
+            title?: string
+            content?: string
+            category?: string
+            memoryKind?: 'fact' | 'log' | 'template'
+          }
+          openArchivePanel(
+            {
+              target: p.target ?? 'knowledge',
+              title: p.title ?? '',
+              content: p.content ?? '',
+              category: p.category ?? '',
+              memoryKind: p.memoryKind ?? 'log',
+              source: 'ai',
+            },
+            {
+              toast: (message: string) => toast(message),
+            }
+          )
+          return { ok: true, text: '已打开归档面板' }
+        }
+        case 'openSettings': {
+          const { section } = (payload ?? {}) as { section?: string }
+          if (section) localStorage.setItem('th.settings.section', section)
+          void openSettingsFlow()
+          reply(true, `已打开设置${section ? `（${section}）` : ''}`)
+          return
+        }
+
+        case 'switchTab': {
+          const { match } = (payload ?? {}) as { match?: string }
+          const needle = (match ?? '').toLowerCase()
+          const doc = docs.find(
+            (item) => item.title.toLowerCase().includes(needle) || (item.path ?? '').toLowerCase().includes(needle)
+          )
+          if (!doc) {
+            reply(false, `没有找到匹配「${match}」的标签`)
+            return
+          }
+          openDoc(doc)
+          reply(true, `已切换到「${doc.title}」`)
+          return
+        }
+
+        default:
+          reply(false, `不认识的操作：${action}`)
+      }
+    } catch (err) {
+      reply(false, `操作失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  })
+
+  // 主进程的 transform_selection 要拿选区、替换选区
+  window.th.editor.onSelectionRequest(({ id }) => {
+    const doc = activeDoc()
+    const sel = view.state.selection.main
+    const text = sel.empty ? '' : view.state.sliceDoc(sel.from, sel.to)
+    window.th.editor.selectionReply({ id, text, from: sel.from, to: sel.to, path: doc?.path ?? null })
+  })
+
+  window.th.editor.onSelectionReplace(({ id, text, from, to }) => {
+    try {
+      const length = view.state.doc.length
+      const start = Math.min(Math.max(from, 0), length)
+      const end = Math.min(Math.max(to, start), length)
+      view.dispatch({
+        changes: { from: start, to: end, insert: text },
+        selection: { anchor: start + text.length },
+      })
+      view.focus()
+      window.th.editor.selectionReplaced({ id, ok: true })
+    } catch {
+      window.th.editor.selectionReplaced({ id, ok: false })
+    }
+  })
+
+  setupSplitResizer()
   setupUpdater()
   setupDropZone()
 
@@ -2290,6 +2790,15 @@ async function boot(): Promise<void> {
 
   /* AI 面板 */
   chat = createChat({
+    onModelChanged: (name) => {
+      cfg = { ...cfg, llmModel: name }
+      // 顺便记到当前服务商名下，设置页切回来时能恢复
+      const key = (cfg.llmBaseUrl || '').trim().replace(/\/+$/, '') || '__custom__'
+      const profiles = { ...(cfg.providerProfiles ?? {}) }
+      profiles[key] = { apiKey: cfg.llmApiKey, model: name }
+      cfg = { ...cfg, providerProfiles: profiles }
+      void window.th.config.patch({ providerProfiles: profiles })
+    },
     getSelectionText: () => {
       const sel = view.state.selection.main
       return sel.empty ? '' : view.state.sliceDoc(sel.from, sel.to)
@@ -2337,12 +2846,36 @@ async function boot(): Promise<void> {
     toast(`已打开 ${baseName(path)}`)
   })
 
+  // 归档/追加写入后，静默重载已打开的同名文档，避免弹「文件已被修改」
+  window.addEventListener('th:reload-path', ((event: CustomEvent<string | { path: string }>) => {
+    const detail = event.detail
+    const rel = typeof detail === 'string' ? detail : detail?.path
+    if (!rel) return
+    const normalized = rel.replace(/\\/g, '/')
+    const doc = docs.find((item) => item.path && item.path.replace(/\\/g, '/').endsWith(normalized))
+    if (!doc || doc.kind !== 'text') return
+    void (async () => {
+      try {
+        if (doc.dirty) return
+        const file = await window.th.fs.read(doc.path as string)
+        doc.state = doc.state.update({ changes: { from: 0, to: doc.state.doc.length, insert: file.text } }).state
+        if (doc.id === activeDoc()?.id) view.setState(doc.state)
+        const stat = await window.th.fs.stat(doc.path as string)
+        doc.diskMtime = stat.mtimeMs
+        doc.diskSize = stat.size
+        renderTabs()
+      } catch {
+        /* 文件没了就跳过 */
+      }
+    })()
+  }) as EventListener)
   // 对话里点 `路径:行号` → 打开那个文件并跳到对应行
-  window.addEventListener('th:open-path', ((event: CustomEvent<{ path: string; line?: number }>) => {
-    const raw = event.detail?.path ?? ''
+  window.addEventListener('th:open-path', ((event: CustomEvent<string | { path: string; line?: number }>) => {
+    const detail = event.detail
+    const raw = typeof detail === 'string' ? detail : (detail?.path ?? '')
     if (!raw) return
     const absolute = /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('/') ? raw : joinPath(cfg.workspaceRoot, raw)
-    void openPath(absolute, event.detail.line)
+    void openPath(absolute, typeof detail === 'string' ? undefined : detail.line)
   }) as EventListener)
 
   $('ai-hide').addEventListener('click', () => toggleAiPanel(true))
@@ -2365,6 +2898,76 @@ async function boot(): Promise<void> {
     event.preventDefault()
     toggleAiPanel()
   })
+
+  // 状态栏「工具」按钮：零延迟配方面板
+
+  $('st-tools').addEventListener('click', (event) => {
+    const anchor = event.currentTarget as HTMLElement
+    openToolsPanel(anchor, {
+      getSelection: () => {
+        const sel = view.state.selection.main
+        if (!sel.empty) return view.state.sliceDoc(sel.from, sel.to)
+        const doc = activeDoc()
+        return doc ? view.state.doc.toString() : ''
+      },
+      applyText: (text) => {
+        const doc = activeDoc()
+        if (!doc || doc.kind !== 'text') {
+          toast('表格文档暂不支持，先切到源码视图')
+          return false
+        }
+        const sel = view.state.selection.main
+        const whole = sel.empty
+        const before = whole ? view.state.doc.toString() : view.state.sliceDoc(sel.from, sel.to)
+        if (before === text) {
+          toast('内容没有变化')
+          return false
+        }
+        // 没有选区时替换整篇；有选区时只替换选区
+        const from = whole ? 0 : sel.from
+        const to = whole ? view.state.doc.length : sel.to
+        // 光标按比例挪到新内容里，避免整篇替换后直接跳到末尾
+        const ratio = before.length > 0 ? sel.head / before.length : 0
+        const anchor = Math.min(Math.max(Math.round(ratio * text.length), 0), text.length)
+        view.dispatch({
+          changes: { from, to, insert: text },
+          selection: { anchor: from + anchor },
+        })
+        view.focus()
+        toast(`${whole ? '整篇' : '选区'}｜${describeChange(before, text)}`)
+        return true
+      },
+      askAgent: (prompt) => {
+        toggleAiPanel(false)
+        const input = document.getElementById('ai-input') as HTMLTextAreaElement | null
+        if (input) {
+          input.value = prompt
+          input.focus()
+        }
+      },
+    })
+  })
+
+  document.addEventListener('th:toast', (event) => {
+    const message = (event as CustomEvent<string>).detail
+    if (message) toast(message)
+  })
+
+  /* 归档草稿：头部图标 + badge */
+  const draftsBtn = $('ai-drafts')
+  const draftsBadge = $('ai-drafts-badge')
+  const refreshDrafts = (): void => {
+    void window.th.archive.draftList().then(({ pending }) => {
+      draftsBadge.hidden = pending === 0
+      draftsBadge.textContent = String(pending)
+      draftsBtn.title = pending > 0 ? `归档草稿：${pending} 条待确认` : '归档草稿'
+    })
+  }
+  draftsBtn.addEventListener('click', () => {
+    void openDraftsPanel({ toast: (message: string) => toast(message), onChanged: refreshDrafts })
+  })
+  window.th.archive.onDraftChanged(() => refreshDrafts())
+  refreshDrafts()
 
   setupResizers()
 
@@ -2413,6 +3016,23 @@ async function boot(): Promise<void> {
     if (menu && !target?.closest('.ctx-menu')) closeMenu()
   })
 
+  // 滚轮时先收起菜单：否则鼠标停在菜单上，编辑器就滚不动
+  document.addEventListener(
+    'wheel',
+    () => {
+      if (menu) closeMenu()
+    },
+    { passive: true }
+  )
+
+  // Esc 关菜单
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && menu) {
+      closeMenu()
+      event.stopPropagation()
+    }
+  })
+
   /* 交互心跳：供后台任务判断"闲置多久" */
   let lastPing = 0
   const ping = (): void => {
@@ -2450,6 +3070,37 @@ async function boot(): Promise<void> {
   setInterval(() => {
     if (docs.some((doc) => doc.dirty || !doc.path)) schedulePersist(true)
   }, 10_000)
+
+  /* Ctrl + 滚轮缩放编辑器字号 */
+  const applyEditorFont = (size: number, force = false): void => {
+    // 8px 是还能看清的最小值；到边界就别再弹提示了
+    const clamped = Math.max(8, Math.min(28, size))
+    if (!force && clamped === cfg.editorFontSize) return
+    cfg = { ...cfg, editorFontSize: clamped }
+    document.documentElement.style.setProperty('--editor-font', `${clamped}px`)
+    void window.th.config.patch({ editorFontSize: clamped })
+    toast(`编辑器字号 ${clamped}px`)
+  }
+  // 启动时要强制应用（否则等于默认值时不会写 CSS 变量）
+  applyEditorFont(cfg.editorFontSize ?? 13, true)
+  document.addEventListener('th:zoom-editor', (event) => {
+    const delta = Number((event as CustomEvent<number>).detail) || 0
+    if (delta === 0) return
+    applyEditorFont((cfg.editorFontSize ?? 13) + delta)
+  })
+
+  /* 主进程的确认请求（MCP 工具调用、归档写入）：用应用内弹窗，跟主题一致 */
+  window.th.ai.onConfirm((request) => {
+    void confirmDialog({
+      title: request.title,
+      message: request.message,
+      detail: request.detail,
+      buttons: request.buttons,
+      primaryId: request.primaryId,
+      defaultId: request.defaultId,
+      cancelId: request.cancelId,
+    }).then((index) => window.th.ai.replyConfirm(request.id, index))
+  })
 
   /* 定时任务状态提示 */
   window.th.tasks.onEvent((event) => {

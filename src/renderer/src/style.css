@@ -451,11 +451,36 @@ html.has-bg #tabbar {
   color: var(--fg);
 }
 
+/* 展开箭头：平时隐身，悬停整行时才出现（空间一直占着，避免文字跳动） */
 .twisty {
   width: 12px;
-  text-align: center;
+  height: 16px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--fg-dim);
-  font-size: 10px;
+  line-height: 0;
+  opacity: 0;
+}
+
+.twisty svg {
+  transition: transform 0.12s ease;
+}
+
+.twisty.open svg {
+  transform: rotate(90deg);
+}
+
+.row:hover .twisty {
+  opacity: 0.85;
+  color: var(--fg);
+}
+
+/* 悬停整行时给一个圆角底，像 pill 按钮 */
+.row:hover {
+  background: var(--bg-3);
+  border-radius: 5px;
 }
 
 .name {
@@ -562,8 +587,7 @@ html.has-bg #tabbar {
 }
 
 #pane-right {
-  flex: none;
-  width: 50%;
+  flex: 0 0 50%;
   border-left: 1px solid var(--border);
   background: var(--bg);
 }
@@ -654,7 +678,8 @@ html.has-bg #split-host .cm-editor {
 
 .cm-scroller {
   font-family: 'Cascadia Code', Consolas, 'Microsoft YaHei', monospace !important;
-  font-size: 13px;
+  /* Ctrl + 滚轮改这个变量 */
+  font-size: var(--editor-font, 13px);
 }
 
 /* ★ body 上全局禁用了 user-select，编辑器里必须显式放开，
@@ -1039,6 +1064,12 @@ body.th-selecting .cm-tooltip-hover {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
+/* 表格的粘性表头/行号：在遮罩之上再压一点，滚动时文字才够清楚 */
+html.has-bg .grid-table thead th,
+html.has-bg .grid-table tbody th,
+html.has-bg .grid-table .grid-corner {
+  background: color-mix(in srgb, var(--bg-3) 40%, transparent);
+}
 /* ---------- agent 写入确认 / 引用链接 ---------- */
 
 /* 授权对话框：路径要能整行折，别被挤成竖条 */
@@ -1263,12 +1294,35 @@ body.th-selecting .cm-tooltip-hover {
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
-/* ---------- 背景图：整窗铺满，面板半透明 ---------- */
+/* ---------- 背景图：整窗铺满，面板统一遮罩 ---------- */
+
+/* 整窗只铺一层遮罩：所有面板透明，浓度在 #bg-scrim 上统一控制，
+   这样不会出现"编辑器亮、侧栏暗"的色块拼接 */
+#bg-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-2) 50%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.has-bg #bg-scrim {
+  display: block;
+}
+
+:root {
+  --scrim: transparent;
+  --scrim-solid: color-mix(in srgb, var(--bg-3) 45%, transparent);
+}
 
 html.has-bg body,
 html.has-bg #app,
-html.has-bg #main,
-html.has-bg #editor-host {
+html.has-bg #editor-host,
+html.has-bg #grid-host,
+html.has-bg .cm-editor,
+html.has-bg .cm-scroller,
+html.has-bg .cm-gutters {
   background: transparent !important;
 }
 
@@ -1302,13 +1356,16 @@ html.has-bg #app > * {
   z-index: 1;
 }
 
+html.has-bg #main,
 html.has-bg #sidebar,
 html.has-bg #tabbar,
 html.has-bg #status,
 html.has-bg #ai-slot,
 html.has-bg #ai-head,
-html.has-bg .cm-gutters {
-  background: color-mix(in srgb, var(--bg-2) 72%, transparent) !important;
+html.has-bg #pane-right,
+html.has-bg #split-head,
+html.has-bg .pane-head {
+  background: transparent !important;
 }
 
 html.has-bg .cm-scroller,
@@ -1318,10 +1375,7 @@ html.has-bg #ai-composer {
   background: transparent !important;
 }
 
-/* 编辑器用和面板一致的半透明底：既保证文字对比度，接缝处也不会出现色阶 */
-html.has-bg .cm-editor {
-  background: color-mix(in srgb, var(--bg-2) 72%, transparent) !important;
-}
+
 
 html.has-bg .chat,
 html.has-bg #ai-body,
@@ -1819,6 +1873,8 @@ html.has-bg .tab.active {
 }
 
 .quick-item {
+  /* 关键：列表本身是 flex 容器，不给 0 0 auto 的话行会被压扁成 13px */
+  flex: 0 0 auto;
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
@@ -1837,6 +1893,7 @@ html.has-bg .tab.active {
 }
 
 .quick-empty {
+  flex: 0 0 auto;
   padding: 16px;
   text-align: center;
   color: var(--fg-dim);
@@ -2215,6 +2272,15 @@ html.has-bg .tab.active {
   display: block;
 }
 
+/* 设置页：模型状态卡与下面的字段之间要留出呼吸空间 */
+.set-pane .model-status {
+  margin: 0 0 18px;
+}
+
+.set-pane .model-url {
+  margin-top: 6px;
+}
+
 .set-title {
   font-size: 14px;
   font-weight: 600;
@@ -2232,7 +2298,7 @@ html.has-bg .tab.active {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
 .set-field > label {
@@ -2284,6 +2350,21 @@ html.has-bg .tab.active {
   color: var(--fg);
 }
 
+/* 设置页里的按钮统一成和输入框一样高，别显得又高又胖 */
+.set-pane .btn {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+.set-pane .btn.small {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .set-version {
   font: 12px 'Cascadia Code', Consolas, monospace;
   color: var(--fg);
@@ -2329,3 +2410,1402 @@ html.has-bg .tab.active {
   display: none;
 }
 
+/* 两栏之间的可拖动分隔条 */
+.split-gutter {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+
+.split-gutter::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: var(--border);
+  transition: background 120ms ease;
+}
+
+.split-gutter:hover::after,
+.split-gutter.dragging::after {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.split-gutter[hidden] {
+  display: none;
+}
+
+/* 拖动分隔条时别让编辑器抢走指针、也别选中文字 */
+body.split-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.split-dragging .cm-editor {
+  pointer-events: none;
+}
+
+/* 状态栏「工具」面板 */
+.tools-panel {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.tools-head {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tools-search {
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.tools-search:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.tools-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.tools-hint {
+  padding: 2px 6px 8px;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.tools-group {
+  margin-bottom: 6px;
+}
+
+.tools-group-label {
+  padding: 4px 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+}
+
+.tools-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tools-item:hover {
+  background: var(--bg-3);
+}
+
+.tools-item-label {
+  flex: 1;
+}
+
+.tools-star {
+  color: var(--fg-dim);
+  opacity: 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tools-item:hover .tools-star,
+.tools-star.on {
+  opacity: 1;
+}
+
+.tools-star.on {
+  color: var(--accent);
+}
+
+.tools-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.tools-foot-label {
+  margin-right: 2px;
+}
+
+.tools-mode {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tools-mode.on {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.tools-empty {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+/* 设置 → 工具能力 */
+.tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+.tool-group-label {
+  padding: 8px 0 2px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+}
+
+.tool-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tool-row:hover {
+  background: var(--bg-3);
+}
+
+.tool-row input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.tool-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.tool-row-desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.tool-badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* ---------- AI 输入框的图片附件 ---------- */
+.round-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.composer-attach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 2px;
+}
+
+.attach-chip {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+}
+
+.attach-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.attach-remove:hover {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+#ai-composer.drop-image .composer-box {
+  outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.msg-images img {
+  width: 132px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+/* ---------- 记忆面板 ---------- */
+.memory-modal {
+  width: min(900px, calc(100vw - 60px));
+  height: min(78vh, 680px);
+  display: flex;
+  flex-direction: column;
+}
+
+.memory-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-head strong {
+  font-size: 13px;
+}
+
+.memory-sub {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+}
+
+.memory-left {
+  flex: 1.25;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  border-right: 1px solid var(--border);
+}
+
+.memory-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  gap: 6px;
+  overflow: auto;
+}
+
+.memory-label {
+  font-size: 11px;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+.memory-area {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  outline: none;
+}
+
+.memory-area:focus {
+  border-color: var(--accent);
+}
+
+.memory-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.memory-log {
+  font-size: 12px;
+  color: var(--fg);
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  line-height: 1.5;
+}
+
+.memory-empty {
+  font-size: 12px;
+  color: var(--fg-dim);
+  line-height: 1.6;
+}
+
+.memory-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memory-file {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--fg-dim);
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11.5px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.memory-file:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.memory-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.memory-hint {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+/* ---------- MCP 服务器列表 ---------- */
+.mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+.mcp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.mcp-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-name {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.mcp-cmd {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-state {
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.mcp-state.ok {
+  color: #4ac26b;
+}
+
+.mcp-state.bad {
+  color: var(--danger);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ask-label {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-bottom: 8px;
+}
+
+.ask-area {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  outline: none;
+}
+/* 多行控件（记忆/MEMORY.md 等）：label 贴顶，别垂直居中 */
+.set-field.set-field-top {
+  align-items: flex-start;
+}
+
+.set-field.set-field-top > label {
+  padding-top: 7px;
+}
+
+/* ---------- 归档面板 ---------- */
+.archive-modal {
+  width: min(720px, calc(100vw - 60px));
+  max-height: min(86vh, 780px);
+  display: flex;
+  flex-direction: column;
+}
+
+.archive-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.archive-sub {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.archive-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.archive-row-top {
+  align-items: flex-start;
+}
+
+.archive-row > label {
+  width: 64px;
+  flex: none;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.archive-row-top > label {
+  padding-top: 8px;
+}
+
+.archive-input {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.archive-input:focus {
+  border-color: var(--accent);
+}
+
+.archive-inline {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.archive-cat-new {
+  flex: 0 0 160px;
+}
+
+.archive-seg {
+  display: flex;
+  gap: 4px;
+}
+
+.archive-seg button {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.archive-seg button.on {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.archive-area {
+  flex: 1;
+  min-height: 180px;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  padding: 10px 12px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  outline: none;
+}
+
+.archive-meta {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  padding-left: 76px;
+}
+
+.archive-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.archive-hint {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.archive-done {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg);
+  min-width: 0;
+}
+
+.archive-done > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11.5px;
+}
+
+/* ---------- 消息勾选 + 归档条 ---------- */
+.msg {
+  position: relative;
+}
+
+.msg-check {
+  position: absolute;
+  left: -22px;
+  top: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.msg:hover .msg-check,
+.msg.picked .msg-check {
+  opacity: 1;
+}
+
+.msg.picked .msg-check {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.msg.picked {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 8px;
+}
+
+.archive-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+
+.archive-bar[hidden] {
+  display: none;
+}
+
+.archive-bar-count {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  flex: none;
+  min-width: 26px;
+}
+
+#ai-body {
+  padding-left: 26px;
+}
+
+/* ---------- 归档草稿 ---------- */
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.has-badge {
+  position: relative;
+  /* 和其它头部按钮同尺寸（28×26），图标用 grid 居中 */
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  line-height: 0;
+}
+
+.has-badge > svg {
+  display: block;
+  /* 文档图标的视觉重心偏高，光学下移 1.5px 看起来才居中 */
+  transform: translateY(1.5px);
+}
+
+.badge[hidden] {
+  display: none;
+}
+
+.archive-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  padding-left: 76px;
+}
+
+.drafts-modal {
+  width: min(620px, calc(100vw - 60px));
+  max-height: min(80vh, 640px);
+  display: flex;
+  flex-direction: column;
+}
+
+.drafts-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drafts-sub {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drafts-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drafts-empty {
+  font-size: 12px;
+  color: var(--fg-dim);
+  padding: 18px 6px;
+  line-height: 1.7;
+}
+
+.draft-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.draft-row:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+.draft-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.draft-title {
+  font-size: 12.5px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-meta {
+  font-size: 11px;
+  color: var(--fg-dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-time {
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.draft-review {
+  width: min(760px, calc(100vw - 60px));
+  max-height: min(86vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+
+.draft-review-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.draft-review-where {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+.draft-review-area {
+  flex: 1;
+  min-height: 260px;
+}
+
+
+.draft-diff-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.draft-diff-info {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+
+.mcp-policy {
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg-dim);
+  font-size: 11px;
+  padding: 0 4px;
+}
+
+
+.memory-semantic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  flex-wrap: wrap;
+}
+
+.memory-semantic-state {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+
+.mcp-preview {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  max-height: 140px;
+  overflow: auto;
+  line-height: 1.7;
+}
+
+.mcp-preview.bad {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+
+.mcp-preview-line {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.mcp-preview-hint {
+  margin-top: 4px;
+  color: var(--fg-dim);
+}
+
+.mcp-warn {
+  color: #f0a24a;
+}
+
+
+/* ---------- 分类树 ---------- */
+.category-picker {
+  position: relative;
+}
+
+.category-btn {
+  text-align: left;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.cat-tree {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.cat-tree[hidden] {
+  display: none;
+}
+
+.cat-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cat-node {
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cat-node:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.cat-node.active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.cat-tree-new {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.cat-tree-empty {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  padding: 6px 8px;
+}
+
+
+/* ---------- 文件类型图标 ---------- */
+.fi-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  opacity: 0.9;
+}
+
+.fi {
+  display: block;
+}
+
+/* 颜色只做辅助，形状才是主要区分 */
+.fi-dir { color: #8fa4c4; }
+.fi-md { color: #6ea8fe; }
+.fi-csv { color: #55b76b; }
+.fi-json { color: #d9a441; }
+.fi-code { color: #b48ef2; }
+.fi-image { color: #e07bb0; }
+.fi-config { color: #4fb6b0; }
+.fi-txt { color: var(--fg-dim); }
+
+.tab.active .fi-wrap {
+  opacity: 1;
+}
+
+/* 标签栏文字过长时省略，图标不许被压扁 */
+.tab .fi-wrap {
+  flex: 0 0 auto;
+}
+
+
+/* 未保存：图标变红（比标题前的 ● 更醒目） */
+.tab.dirty .fi-wrap,
+.tab.dirty .fi {
+  color: var(--danger);
+}
+
+.tab.dirty .title {
+  color: var(--fg);
+}
+
+
+/* 图片预览 */
+.image-preview {
+  width: min(880px, calc(100vw - 80px));
+  max-height: min(86vh, 820px);
+  display: flex;
+  flex-direction: column;
+}
+
+.image-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.image-preview-body {
+  flex: 1;
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: linear-gradient(45deg, var(--bg) 25%, transparent 25%) -8px 0/16px 16px,
+    linear-gradient(-45deg, var(--bg) 25%, transparent 25%) -8px 0/16px 16px,
+    linear-gradient(45deg, transparent 75%, var(--bg) 75%) -8px 0/16px 16px,
+    linear-gradient(-45deg, transparent 75%, var(--bg) 75%) -8px 0/16px 16px,
+    var(--bg-3);
+}
+
+.image-preview-body img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+
+/* 文件树里的图标：固定 16 盒居中，避免不同形状看起来一高一低 */
+.row .fi-wrap {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  margin-top: -1px;
+}
+
+.row .fi {
+  width: 14px;
+  height: 14px;
+}
+
+/* 弹窗按钮的聚焦环：默认的 -webkit-focus-ring-color 在这套深色主题里偏橙，统一成主题色 */
+.modal .btn:focus-visible,
+.modal .btn:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: 1px;
+}
+
+/* ---------- 缩进参考线 ----------
+   只画到实际缩进层级为止（background-size 控制条数），
+   颜色取 fg-dim 的 16%，深色下不刺眼、浅色下不糊成一片 */
+.cm-line.cm-guide-l1 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 1) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l2 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 2) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l3 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 3) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l4 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 4) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l5 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 5) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l6 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 6) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l7 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 7) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l8 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 8) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l9 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 9) 100%;
+  background-position: 0 0;
+}
+
+.cm-line.cm-guide-l10 {
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 0,
+    color-mix(in srgb, var(--fg-dim) 24%, transparent) 1px,
+    transparent 1px,
+    transparent 2ch
+  );
+  background-repeat: no-repeat;
+  background-size: calc(2ch * 10) 100%;
+  background-position: 0 0;
+}
+
+/* 当前行的高亮会把参考线盖掉，压一层回来 */
+.cm-line.cm-guide-l1,
+.cm-line.cm-guide-l2,
+.cm-line.cm-guide-l3,
+.cm-line.cm-guide-l4,
+.cm-line.cm-guide-l5,
+.cm-line.cm-guide-l6,
+.cm-line.cm-guide-l7,
+.cm-line.cm-guide-l8,
+.cm-line.cm-guide-l9,
+.cm-line.cm-guide-l10 {
+  background-attachment: local;
+}
+
+/* ---------- 彩虹括号 ---------- */
+.cm-bracket-l1 { color: #e0b341; }
+.cm-bracket-l2 { color: #d47ee0; }
+.cm-bracket-l3 { color: #6cb6e8; }
+.cm-bracket-l4 { color: #7fc98a; }
+
+html[data-theme='light'] .cm-bracket-l1 { color: #9a6700; }
+html[data-theme='light'] .cm-bracket-l2 { color: #a03bbd; }
+html[data-theme='light'] .cm-bracket-l3 { color: #1f6fb2; }
+html[data-theme='light'] .cm-bracket-l4 { color: #2f7d3c; }
+
+
+/* ---------- 光标所在括号的红色参考线 ---------- */
+.cm-line.cm-bracket-guide-line {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--danger) 70%, transparent) 0,
+    color-mix(in srgb, var(--danger) 70%, transparent) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  background-repeat: no-repeat;
+  background-size: 1px 100%;
+  background-origin: content-box;
+  background-position: var(--guide-x, 0) 0;
+}
+
+/* 配对的两个括号本身标红 */
+.cm-bracket-active {
+  color: var(--danger) !important;
+  font-weight: 600;
+}
+
+/* CodeMirror 自带的「匹配括号」会加青底方块，这里去掉底色，只靠红色标识 */
+.cm-matchingBracket,
+.cm-nonmatchingBracket {
+  background: transparent !important;
+  outline: none !important;
+  color: var(--danger) !important;
+  font-weight: 600;
+}
+
+
+/* ---------- 行号旁的改动标记 ---------- */
+.cm-change-gutter {
+  width: 7px;
+  cursor: default;
+}
+
+.cm-change-marker {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+}
+
+.cm-change-marker.added {
+  background: #3fb950;
+}
+
+.cm-change-marker.modified {
+  background: #d29922;
+}
+
+/* ---------- 折叠占位 ---------- */
+.cm-foldPlaceholder {
+  padding: 0 4px;
+  margin: 0 2px;
+  border-radius: 3px;
+  background: var(--bg-4);
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  font-size: 11px;
+}

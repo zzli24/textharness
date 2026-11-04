@@ -1,14 +1,24 @@
 import { spawn } from 'node:child_process'
+import { Script } from 'node:vm'
 import { existsSync, promises as fs, readFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dayStamp } from './assets'
 import { decodeText, encodeText } from './encoding'
 import type { Encoding, Eol } from '@shared/types'
 import { assertInside, listTree, looksBinary } from './files'
+import { deleteSession, listSessions } from './sessions'
+import { readMemory, remember, searchMemory } from './memory'
+import { TOOL_DEFS } from './toolSchemas'
+
+export { TOOL_DEFS }
 
 export interface ToolContext {
   root: string
   assetsDir: string
+  /** 应用数据目录（向量索引和模型缓存放这里） */
+  userData?: string
+  /** 记忆检索是否用向量（关掉走 BM25） */
+  memorySemantic?: boolean
   /** 让渲染进程把文件在编辑器里打开 */
   openInEditor?(path: string): void
   /**
@@ -21,6 +31,21 @@ export interface ToolContext {
    * 返回 'deny' 拒绝、'read' 只读、'write' 可读写；不提供就当拒绝。
    */
   requestAccess?(path: string, mode: 'read' | 'write'): Promise<'deny' | 'read' | 'write'>
+  /** 读取编辑器当前选区（拿不到就返回 null） */
+  getSelection?(): Promise<{ text: string; from: number; to: number; path: string | null } | null>
+  /** 用新内容替换编辑器里的选区（可撤销） */
+  replaceSelection?(text: string): Promise<boolean>
+  /** 操作编辑器界面：state / setAppearance / closeTabs / openSettings / switchTab */
+  appControl?(action: string, payload?: unknown): Promise<{ ok: boolean; data?: unknown; text: string }>
+  /** 危险操作前确认（原生对话框），不提供就直接拒绝 */
+  confirm?(title: string, detail: string): Promise<boolean>
+  /** 调用外部 MCP 工具前确认（按服务器策略触发） */
+  confirmMcpCall?(server: string, tool: string, args: unknown): Promise<boolean>
+  /**
+   * 写 知识库/ 或 记忆/ 前的授权闸门（这两个目录是「归档区」，模型不能随手写）。
+   * 返回 allow 本次放行、session 本轮放行、deny 拒绝；不提供就当拒绝。
+   */
+  archiveWrite?(path: string, summary: string): Promise<'allow' | 'session' | 'deny'>
   /**
    * 执行脚本前请用户确认（界面上展示代码）。
    * 不提供就直接拒绝——脚本能读写整台机器，必须有人看着。
@@ -62,176 +87,45 @@ const TEXT_EXT = new Set([
 ])
 
 /** 暴露给模型的工具定义（OpenAI function-calling 格式） */
-export const TOOL_DEFS = [
-  {
-    type: 'function' as const,
-    function: {
-      name: 'list_dir',
-      description: '列出工作区某个目录下的文件和子目录。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '相对工作区的目录路径；留空表示工作区根目录' },
-        },
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'write_new_file',
-      description:
-        '在工作区里"新建"一个文件。如果目标已存在会直接失败——用于定时任务等只允许新增、不允许改写既有内容的场景。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '相对工作区的新文件路径' },
-          content: { type: 'string', description: '完整文件内容' },
-        },
-        required: ['path', 'content'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'apply_patch',
-      description:
-        '精确修改已有文件里的某一段内容：把 old_text 替换成 new_text。比 write_file 更安全更省 token——只发改动部分，不用重抄整篇。old_text 必须在文件里唯一命中（不唯一就多带几行上下文）；确实要改多处时传 replace_all=true。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '相对工作区的文件路径' },
-          old_text: { type: 'string', description: '要被替换的原文（尽量带上几行上下文，保证唯一）' },
-          new_text: { type: 'string', description: '替换后的内容；传空字符串表示删除这段' },
-          replace_all: { type: 'boolean', description: 'old_text 出现多次时是否全部替换，默认 false' },
-        },
-        required: ['path', 'old_text', 'new_text'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'read_file',
-      description: '读取工作区内一个文本文件的内容，返回带行号的文本。文件较大时会分段返回，末尾会提示下一次该用哪个 offset 继续读；需要完整内容时请继续调用直到没有提示。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '相对工作区的文件路径' },
-          offset: { type: 'number', description: '从第几行开始读（1 起），默认 1' },
-          limit: { type: 'number', description: '最多读多少行，默认 2000（还会按字符数自动分段）' },
-        },
-        required: ['path'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'write_file',
-      description:
-        '把内容写入工作区内的文件（不存在则创建，存在则覆盖）。覆盖前会自动备份到 .history。适合写笔记、脚本、SQL。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '相对工作区的文件路径' },
-          content: { type: 'string', description: '完整文件内容' },
-        },
-        required: ['path', 'content'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'replace_in_file',
-      description:
-        '按正则批量替换单个文件里的文本，一次调用改完所有命中。落盘前会把命中的前后对比给你看（工作区外的文件会先要写权限）。适合"把所有 X 改成 Y"这类规则化改动，比 apply_patch 一条条改省步数。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '文件路径（工作区外用绝对路径）' },
-          pattern: { type: 'string', description: '要匹配的正则表达式' },
-          replacement: { type: 'string', description: '替换成什么；可用 $1 $2 引用分组，删掉命中就传空串' },
-          ignore_case: { type: 'boolean', description: '是否忽略大小写，默认 false' },
-        },
-        required: ['path', 'pattern', 'replacement'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'run_script',
-      description:
-        '写一段 Node.js 脚本交给本机执行，适合处理大文件（整库 dump、日志、CSV）：统计、提取、批量改写、生成新文件。脚本通过 stdout 输出结果，运行时需要用户点一次确认。做批量文本处理时比反复调用 read_file 更省上下文。',
-      parameters: {
-        type: 'object',
-        properties: {
-          code: {
-            type: 'string',
-            description:
-              '完整的 Node.js 脚本。require() 和 import 写法都支持（按出现的语法自动选择）。cwd 是工作区根目录，读写工作区外文件请用绝对路径。结果用 console.log 输出，尽量只打印摘要。',
-          },
-          timeout_ms: { type: 'number', description: '超时毫秒数，默认 20000，最大 120000' },
-        },
-        required: ['code'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'count_in_file',
-      description:
-        '在单个文件里统计：总行数、匹配某个正则的行数与次数，并可返回前若干条命中行。适合大文件（整库 dump、日志）里数 CREATE TABLE 之类，不用把全文读进上下文。',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '文件路径（工作区外会弹窗申请权限）' },
-          pattern: { type: 'string', description: '正则表达式；留空则只统计总行数/大小' },
-          ignore_case: { type: 'boolean', description: '是否忽略大小写，默认 true' },
-          sample: { type: 'number', description: '返回前几条命中行，默认 20，最大 300' },
-        },
-        required: ['path'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'search_files',
-      description: '在工作区里按正则搜索文本，返回命中的文件、行号和内容片段。',
-      parameters: {
-        type: 'object',
-        properties: {
-          pattern: { type: 'string', description: '正则表达式' },
-          path: { type: 'string', description: '限定搜索的子目录，留空表示整个工作区' },
-          max_results: { type: 'number', description: '最多返回多少条，默认 40' },
-        },
-        required: ['pattern'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'open_in_editor',
-      description: '把工作区里的一个文件在编辑器里打开（用户可见）。',
-      parameters: {
-        type: 'object',
-        properties: { path: { type: 'string', description: '相对工作区的文件路径' } },
-        required: ['path'],
-      },
-    },
-  },
-]
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
+/** 在沙箱里跑用户/模型给的变换代码，2 秒超时 */
+function runTextTransform(code: string, text: string): string {
+  // 把调用也放进脚本里，这样 timeout 管得住死循环
+  const source = `(function (text) {\n${code}\n})(__input)`
+  const script = new Script(source, { filename: 'transform.js' })
+  const result = script.runInNewContext({ __input: text }, { timeout: 2000 })
+  if (typeof result !== 'string') throw new Error('code 必须 return 一个字符串')
+  return result
+}
+
+/** 文本统计：行/词/字/中文/去重/最长行 */
+function summarizeText(text: string, where: string): string {
+  const lines = text.split('\n')
+  const nonEmpty = lines.filter((line) => line.trim()).length
+  const words = (text.match(/[A-Za-z0-9_]+/g) ?? []).length
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length
+  const unique = new Set(lines).size
+  let longest = 0
+  let longestLine = 0
+  lines.forEach((line, index) => {
+    if (line.length > longest) {
+      longest = line.length
+      longestLine = index + 1
+    }
+  })
+  return [
+    `${where}：`,
+    `  行数 ${lines.length}（非空 ${nonEmpty}）`,
+    `  去重后行数 ${unique}`,
+    `  字符 ${text.length}，英文/数字词 ${words}，中文 ${cjk}`,
+    `  最长行 ${longest} 字符（第 ${longestLine} 行）`,
+  ].join('\n')
 }
 
 /** 用 Electron 自带的 Node 跑一段脚本（打包后 process.execPath 就是 app 自身） */
@@ -298,6 +192,57 @@ function displayPath(ctx: ToolContext, p: string): string {
  * - 工作区外：向用户申请一次权限（拒绝就抛错；只读授权不能写）
  * 授权由主进程记住，同一文件后续调用不会再问。
  */
+/** 工作区里的「今天」目录名（和 AGENTS.md 约定一致：2026-11-03） */
+function todayDirName(): string {
+  const d = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * 新建笔记时补默认目录：
+ * 用户/模型只给了文件名（如 未命名-1.md）就落到 <工作区>/<今天>/ 下，
+ * 避免笔记散落在工作区根目录。显式给了目录的路径不干预。
+ */
+function withDefaultNoteDir(root: string, rawPath: string): string {
+  const trimmed = rawPath.trim()
+  if (!trimmed) return trimmed
+  const normalized = trimmed.replace(/\\/g, '/')
+  if (normalized.includes('/')) return trimmed
+  if (!/\.(md|markdown|txt)$/i.test(normalized)) return trimmed
+  // 根目录已经有同名文件（例如 AGENTS.md）：保持原位，别复制出一份到日期目录
+  if (existsSync(join(root, trimmed))) return trimmed
+  return `${todayDirName()}/${trimmed}`
+}
+
+/** 归档区：知识库/ 与 记忆/。模型主动写这两个目录需要授权 */
+const ARCHIVE_DIRS = ['知识库', '记忆']
+
+function isArchivePath(root: string, target: string): boolean {
+  const rel = target.slice(root.length).replace(/^[\\/]+/, '').replace(/\\/g, '/')
+  return ARCHIVE_DIRS.some((dir) => rel === dir || rel.startsWith(`${dir}/`))
+}
+
+/** 写归档区之前问一次；用户选「本轮都允许」后，本次会话内不再问 */
+async function guardArchiveWrite(
+  ctx: ToolContext,
+  target: string,
+  summary: string
+): Promise<{ ok: true } | { ok: false; text: string }> {
+  if (!isArchivePath(ctx.root, target)) return { ok: true }
+  if (!ctx.archiveWrite) {
+    return {
+      ok: false,
+      text: '写 知识库/ 或 记忆/ 需要用户授权，当前环境没有授权通道。请让用户用界面的「归档」按钮，或改用 propose_archive 提议。',
+    }
+  }
+  const decision = await ctx.archiveWrite(target, summary)
+  if (decision === 'deny') {
+    return { ok: false, text: '用户拒绝了这次写入。不要换个路径重试，直接用 propose_archive 提议，或把内容放在回答里。' }
+  }
+  return { ok: true }
+}
+
 async function resolveToolPath(
   ctx: ToolContext,
   p: string | undefined,
@@ -370,6 +315,8 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
 
       case 'apply_patch': {
         const file = await resolveToolPath(ctx, args['path'] as string, 'write')
+        const patchGate = await guardArchiveWrite(ctx, file, `修改 ${displayPath(ctx, file)}（apply_patch）`)
+        if (!patchGate.ok) return { ok: false, text: patchGate.text }
         const oldText = String(args['old_text'] ?? '')
         const newText = String(args['new_text'] ?? '')
         const replaceAll = args['replace_all'] === true || args['replace_all'] === 'true'
@@ -431,9 +378,16 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
       }
 
       case 'write_file': {
-        const file = await resolveToolPath(ctx, args['path'] as string, 'write')
+        const file = await resolveToolPath(ctx, withDefaultNoteDir(ctx.root, String(args['path'] ?? '')), 'write')
         const content = String(args['content'] ?? '')
         if (content.length > 2_000_000) return { ok: false, text: '内容超过 2MB，拒绝写入。' }
+
+        const writeGate = await guardArchiveWrite(
+          ctx,
+          file,
+          `写入 ${displayPath(ctx, file)}（${content.length} 字符）`
+        )
+        if (!writeGate.ok) return { ok: false, text: writeGate.text }
 
         const relPath = displayPath(ctx, file)
         let previous = ''
@@ -477,7 +431,11 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
       }
 
       case 'write_new_file': {
-        const target = await resolveToolPath(ctx, args['path'] as string, 'write')
+        // 归档区（知识库/记忆）需要用户明确授权
+        // 注意：先粗判，真正路径在下面 resolveToolPath 后再复核
+        // 只给文件名时自动落到「今天」目录，别散在工作区根目录
+        const notePath = withDefaultNoteDir(ctx.root, String(args['path'] ?? ''))
+        const target = await resolveToolPath(ctx, notePath, 'write')
         const content = String(args['content'] ?? '')
         if (content.length > 2_000_000) return { ok: false, text: '内容超过 2MB，拒绝写入。' }
 
@@ -488,6 +446,9 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
             text: `目标已存在：${args['path']}。按规则只能新建、不能改写已有文件，请换一个文件名。`,
           }
         }
+
+        const gate = await guardArchiveWrite(ctx, target, `新建 ${displayPath(ctx, target)}（${content.length} 字符）`)
+        if (!gate.ok) return { ok: false, text: gate.text }
 
         await fs.mkdir(dirname(target), { recursive: true })
         await fs.writeFile(target, encodeText(content, { encoding: 'utf8', bom: false, eol: 'LF' }).buffer)
@@ -601,6 +562,288 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
         return { ok: !run.timedOut && run.code === 0, text: chunks.join('\n') }
       }
 
+      case 'list_images': {
+        const base = await resolveToolPath(ctx, args['dir'] as string | undefined, 'read')
+        const limit = Math.min(Math.max(Number(args['limit'] ?? 40), 1), 200)
+        const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'])
+        const found: Array<{ rel: string; size: number }> = []
+
+        const walk = async (dir: string, depth: number): Promise<void> => {
+          if (found.length >= limit || depth > 4) return
+          let entries: Array<{ name: string; isDirectory(): boolean }>
+          try {
+            entries = await fs.readdir(dir, { withFileTypes: true })
+          } catch {
+            return
+          }
+          for (const entry of entries) {
+            if (found.length >= limit) return
+            if (entry.name.startsWith('.')) continue
+            const full = join(dir, entry.name)
+            if (entry.isDirectory()) {
+              await walk(full, depth + 1)
+              continue
+            }
+            if (!IMAGE_EXT.has(extname(entry.name).toLowerCase())) continue
+            try {
+              const stat = await fs.stat(full)
+              if (stat.size > 16 * 1024 * 1024) continue
+              found.push({ rel: displayPath(ctx, full), size: stat.size })
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+
+        await walk(base, 0)
+        if (found.length === 0) return { ok: true, text: '工作区里没有找到图片。' }
+        const lines = found.map((item) => `${item.rel}  ${humanSize(item.size)}`)
+        return { ok: true, text: `找到 ${found.length} 张图片：\n${lines.join('\n')}` }
+      }
+
+      case 'app_state': {
+        const reply = await ctx.appControl?.('state')
+        if (!reply) return { ok: false, text: '当前环境不支持读取编辑器状态。' }
+        if (!reply.ok) return { ok: false, text: reply.text }
+        return { ok: true, text: reply.text }
+      }
+
+      case 'set_appearance': {
+        const patch: Record<string, unknown> = {}
+        if (args['theme'] === 'dark' || args['theme'] === 'light') patch['theme'] = args['theme']
+        if (typeof args['bgPreset'] === 'number') patch['bgPreset'] = Math.min(Math.max(Number(args['bgPreset']), 0), 5)
+        if (typeof args['bgOpacity'] === 'number') patch['bgOpacity'] = Math.min(Math.max(Number(args['bgOpacity']), 0.05), 0.9)
+        if (typeof args['bgBlur'] === 'number') patch['bgBlur'] = Math.min(Math.max(Number(args['bgBlur']), 0), 24)
+        if (typeof args['bgDim'] === 'number') patch['bgDim'] = Math.min(Math.max(Number(args['bgDim']), 0), 0.85)
+        if (typeof args['bgImage'] === 'string') {
+          const raw = args['bgImage'].trim()
+          if (!raw) {
+            patch['bgImage'] = ''
+          } else {
+            const file = await resolveToolPath(ctx, raw, 'read')
+            const ext = extname(file).toLowerCase()
+            if (!['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'].includes(ext)) {
+              return { ok: false, text: `${raw} 不是图片文件。` }
+            }
+            const stat = await fs.stat(file)
+            if (stat.size > 16 * 1024 * 1024) return { ok: false, text: '图片超过 16MB，先压缩一下。' }
+            // config 里存相对工作区的路径
+            patch['bgImage'] = displayPath(ctx, file)
+            patch['bgPreset'] = 0
+          }
+        }
+        if (Object.keys(patch).length === 0) return { ok: false, text: '没有要改的项。' }
+
+        const reply = await ctx.appControl?.('setAppearance', patch)
+        if (!reply) return { ok: false, text: '当前环境不支持修改外观。' }
+        return { ok: reply.ok, text: reply.text }
+      }
+
+      case 'close_tabs': {
+        const scope = String(args['scope'] ?? 'others')
+        if (!['today', 'others', 'all', 'match'].includes(scope)) return { ok: false, text: `scope 不认识：${scope}` }
+        const reply = await ctx.appControl?.('closeTabs', {
+          scope,
+          pattern: args['pattern'] ? String(args['pattern']) : '',
+          includeDirty: args['includeDirty'] === true,
+        })
+        if (!reply) return { ok: false, text: '当前环境不支持关闭标签。' }
+        return { ok: reply.ok, text: reply.text }
+      }
+
+      case 'open_settings': {
+        const section = String(args['section'] ?? '')
+        const reply = await ctx.appControl?.('openSettings', { section })
+        if (!reply) return { ok: false, text: '当前环境不支持打开设置。' }
+        return { ok: reply.ok, text: reply.text }
+      }
+
+      case 'remember': {
+        const kindRaw = String(args['kind'] ?? 'fact')
+        if (kindRaw !== 'fact' && kindRaw !== 'log' && kindRaw !== 'template') {
+          return { ok: false, text: 'kind 只能是 fact / log / template' }
+        }
+        try {
+          const result = remember(ctx.root, kindRaw, String(args['text'] ?? ''))
+          const hint =
+            kindRaw === 'fact'
+              ? '（已写进 MEMORY.md，之后每轮对话都会带上）'
+              : kindRaw === 'template'
+                ? '（模板不进上下文，需要时用 read_file 读这个路径）'
+                : '（写进当月日志，只注入最近几条）'
+          return { ok: true, text: `已记到 ${result.path}：${result.text}${hint}` }
+        } catch (err) {
+          return { ok: false, text: err instanceof Error ? err.message : String(err) }
+        }
+      }
+
+      case 'recall': {
+        const query = String(args['query'] ?? '').trim()
+        const limit = Math.min(Math.max(Number(args['limit'] ?? 10), 1), 50)
+        let hits = searchMemory(ctx.root, query, limit)
+        // 开了语义检索就先用向量；模型/索引不可用时静默回落到 BM25
+        if (ctx.memorySemantic && ctx.userData && query) {
+          try {
+            const { semanticSearch } = await import('./semanticIndex')
+            const semantic = await semanticSearch(ctx.root, ctx.userData, query, limit)
+            if (semantic && semantic.length > 0) hits = semantic
+          } catch {
+            /* 回落 BM25 */
+          }
+        }
+        if (hits.length === 0) return { ok: true, text: `记忆里没找到「${query}」。` }
+        const lines = hits.map((hit) => `${hit.path}:${hit.line}  ${hit.text}`)
+        return { ok: true, text: `记忆里找到 ${hits.length} 条：\n${lines.join('\n')}` }
+      }
+
+      case 'propose_mcp_server': {
+        const raw = String(args['json'] ?? '').trim()
+        if (!raw) return { ok: false, text: 'json 是空的' }
+        let parsed: Record<string, unknown>
+        try {
+          parsed = JSON.parse(raw) as Record<string, unknown>
+        } catch (err) {
+          return { ok: false, text: `JSON 解析失败：${err instanceof Error ? err.message : String(err)}。让用户检查后再贴一次。` }
+        }
+        const source = (parsed['mcpServers'] as Record<string, unknown> | undefined) ?? parsed
+        const names = Object.keys(source)
+        const invalid = names.filter((name) => {
+          const entry = source[name] as { command?: unknown; url?: unknown } | null
+          const hasCommand = !!entry && typeof entry.command === 'string' && entry.command.trim().length > 0
+          const hasUrl = !!entry && typeof entry.url === 'string' && entry.url.trim().length > 0
+          return !hasCommand && !hasUrl
+        })
+        if (names.length === 0) return { ok: false, text: '没解析出任何服务器（缺 mcpServers 或为空）' }
+        if (invalid.length > 0) {
+          return { ok: false, text: `这些服务器既没有 command 也没有 url：${invalid.join(', ')}` }
+        }
+        if (!ctx.appControl) return { ok: false, text: '当前环境打不开确认框，请让用户去设置里手动添加' }
+
+        const result = await ctx.appControl('proposeMcp', { json: raw, names })
+        return {
+          ok: true,
+          text: result.ok
+            ? `已解析出 ${names.length} 台服务器（${names.join('、')}），确认框已打开。等用户点「添加并连接」后才会写入配置；不要自己改配置。`
+            : `确认框没打开：${result.text}`,
+        }
+      }
+
+      case 'propose_archive': {
+        const target = String(args['target'] ?? 'knowledge') === 'memory' ? 'memory' : 'knowledge'
+        const title = String(args['title'] ?? '').trim() || '未命名'
+        const content = String(args['content'] ?? '')
+        if (!content.trim()) return { ok: false, text: 'content 是空的，没东西可归档。' }
+        if (!ctx.appControl) {
+          return { ok: false, text: '当前环境没法打开归档面板，请让用户用界面的「归档」按钮。' }
+        }
+        const result = await ctx.appControl('proposeArchive', {
+          target,
+          title,
+          content,
+          category: String(args['category'] ?? ''),
+          memoryKind: String(args['memoryKind'] ?? 'log'),
+        })
+        return {
+          ok: true,
+          text: result.ok
+            ? `已打开归档面板（${target === 'memory' ? '记忆' : '知识库'}｜${title}），等用户确认后才会写盘。不要自己再写文件。`
+            : `归档面板没打开：${result.text}`,
+        }
+      }
+
+      case 'clear_history': {
+        const scope = String(args['scope'] ?? 'older')
+        if (!['older', 'all'].includes(scope)) return { ok: false, text: `scope 不认识：${scope}` }
+        const days = Math.min(Math.max(Number(args['days'] ?? 30), 1), 3650)
+        const all = await listSessions()
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+        const doomed = scope === 'all' ? all : all.filter((session) => session.updatedAt < cutoff)
+        if (doomed.length === 0) {
+          return { ok: true, text: `没有需要清理的会话（共 ${all.length} 个）。` }
+        }
+
+        const label = scope === 'all' ? `全部 ${doomed.length} 个会话` : `${days} 天前的 ${doomed.length} 个会话`
+        const ok = ctx.confirm ? await ctx.confirm('清理历史对话记录', `将删除${label}，此操作不可恢复。`) : false
+        if (!ok) return { ok: false, text: '用户取消了清理，没有删除任何记录。' }
+
+        let removed = 0
+        for (const session of doomed) {
+          try {
+            deleteSession(session.id)
+            removed += 1
+          } catch {
+            /* 单个失败不影响其它 */
+          }
+        }
+        const left = await listSessions()
+        return { ok: true, text: `已删除 ${removed} 个会话，还剩 ${left.length} 个。` }
+      }
+
+      case 'switch_tab': {
+        const match = String(args['match'] ?? '')
+        if (!match) return { ok: false, text: 'match 不能为空' }
+        const reply = await ctx.appControl?.('switchTab', { match })
+        if (!reply) return { ok: false, text: '当前环境不支持切换标签。' }
+        return { ok: reply.ok, text: reply.text }
+      }
+
+      case 'transform_selection': {
+        const code = String(args['code'] ?? '').trim()
+        if (!code) return { ok: false, text: 'code 不能为空' }
+        if (!ctx.getSelection || !ctx.replaceSelection) {
+          return { ok: false, text: '当前环境拿不到编辑器选区。' }
+        }
+
+        const selection = await ctx.getSelection()
+        if (!selection || !selection.text) {
+          return { ok: false, text: '用户当前没有选中文本，先让他选一段再试。' }
+        }
+
+        let output = ''
+        try {
+          output = runTextTransform(code, selection.text)
+        } catch (err) {
+          return { ok: false, text: `变换代码出错：${err instanceof Error ? err.message : String(err)}` }
+        }
+        if (typeof output !== 'string') return { ok: false, text: 'code 必须 return 一个字符串。' }
+        if (output === selection.text) return { ok: false, text: '变换后内容没有变化。' }
+
+        if (ctx.approve) {
+          const ok = await ctx.approve({
+            path: '当前选区',
+            before: selection.text.slice(0, 20000),
+            after: output.slice(0, 20000),
+            summary: args['note'] ? String(args['note']) : `选区替换（${selection.text.length} → ${output.length} 字符）`,
+          })
+          if (!ok) return { ok: false, text: '用户拒绝了这次替换，选区没动。' }
+        }
+
+        const applied = await ctx.replaceSelection(output)
+        if (!applied) return { ok: false, text: '替换失败：编辑器没接受这次修改。' }
+        return { ok: true, text: `已替换选区：${selection.text.length} → ${output.length} 字符（Ctrl+Z 可撤销）` }
+      }
+
+      case 'text_stats': {
+        const target = args['path'] ? String(args['path']) : ''
+        let text = ''
+        let where = ''
+        if (target) {
+          const file = await resolveToolPath(ctx, target, 'read')
+          const buf = await fs.readFile(file)
+          if (looksBinary(buf)) return { ok: false, text: `${displayPath(ctx, file)} 看起来是二进制文件。` }
+          text = decodeText(buf).text
+          where = displayPath(ctx, file)
+        } else {
+          const selection = await ctx.getSelection?.()
+          if (!selection || !selection.text.trim()) {
+            return { ok: false, text: '当前没有选中文本，也没有给路径。' }
+          }
+          text = selection.text
+          where = '当前选区'
+        }
+        return { ok: true, text: summarizeText(text, where) }
+      }
+
       case 'count_in_file': {
         const file = await resolveToolPath(ctx, args['path'] as string, 'read')
         const pattern = String(args['pattern'] ?? '').trim()
@@ -710,6 +953,18 @@ export function buildSystemPrompt(ctx: ToolContext): string {
     '- 大文件多步处理、生成新文件、跨文件统计 → run_script',
     '- 找文件 → search_files；看内容 → read_file（大文件配 offset）',
     '',
+    '用户可能直接贴图或拖图进对话框，你能看到图片内容，直接根据图回答，不要说自己没有视觉能力。',
+    '用户说"用我那张图当背景" → list_images 找图，再 set_appearance({ bgImage })。',
+    '',
+    '要留档时用 propose_archive 提议（界面会弹归档面板，用户确认才写），不要直接用 write_file 写 知识库/ 或 记忆/。',
+    '只有用户明确说"存/记/归档"才提议；用户只是提问时，回答完就结束，不要顺手建文件。',
+    '',
+    '你还能操作编辑器本身（不是文件）：',
+    '- 用户问"我开了几个页面/这个文件改过没/我什么主题" → app_state',
+    '- 用户说"换成深色/背景太亮/换个背景" → 直接 set_appearance，不要只给操作步骤',
+    '- 用户说"关掉今天的页面/关掉其他标签" → close_tabs（未保存的默认跳过，别硬关）',
+    '- 用户说"打开设置改模型" → open_settings，让用户自己填 Key',
+    '',
     '判断标准：',
     '- 改动超过 3 处、或能用一条正则描述 → 用 replace_in_file（有预览，比脚本安全）',
     '- 需要计算、聚合、生成新文件时才用 run_script',
@@ -722,6 +977,8 @@ export function buildSystemPrompt(ctx: ToolContext): string {
     '- 动手前想清楚这一批要改什么；方向错了直接说明，不要盲目试工具',
 
     '',
+    '新建笔记（.md/.markdown/.txt）时默认写到「今天」目录，例如 2026-11-03/未命名-1.md；不要直接放在工作区根目录。',
+    '外部工具命名：MCP 服务器提供的工具叫「服务器名__工具名」（两个下划线），例如 db-kb__query；它们只在服务器连上后才出现在工具清单里。',
     '引用格式：提到工作区里的文件时写成 `相对路径:行号`（例如 知识库/MySQL/索引.md:12），',
     '界面上会渲染成可点击的链接，用户点一下就能跳到那一行。',
     '',
@@ -741,6 +998,41 @@ export function buildSystemPrompt(ctx: ToolContext): string {
     }
   } catch {
     /* 读不到就当没有 */
+  }
+
+  // 长期记忆：每次对话都注入，是常数开销，所以有截断
+  try {
+    const memory = readMemory(ctx.root)
+    if (memory.facts) {
+      lines.push('', '---', '以下是长期记忆（用户偏好/环境/禁忌），必须遵守：', memory.facts)
+    }
+    if (memory.recentLogs.length > 0) {
+      lines.push('', '最近几次会话的结论：', ...memory.recentLogs.map((line) => line))
+    }
+    if (memory.templates.length > 0) {
+      const names = memory.templates.slice(0, 12).map((item) => `${item.title} → ${item.path}`)
+      lines.push(
+        '',
+        `记忆/模板 里有 ${memory.templates.length} 个模板（需要时 read_file 读取，不用猜内容）：`,
+        ...names.map((name) => `- ${name}`)
+      )
+    }
+    if (memory.facts || memory.recentLogs.length > 0) {
+      lines.push(
+        '',
+        '记忆分三档，别混用：',
+        '- fact：一两句稳定事实（偏好/环境/禁忌/约定），上限 200 字，写 MEMORY.md，每轮都带上',
+        '- log：一次会话的结论，上限 800 字，写当月日志',
+        '- template：多字段模板、表单、清单、长格式 → 写 记忆/模板/，不占上下文，用时 read_file',
+        '判断口诀：每轮都用得上 → fact；只在特定任务用 → template；一次性结论 → log。',
+        '用户贴一段长格式让你"记住"时，默认存成 template，不要塞 fact。',
+        '不要在 MEMORY.md 里写「某模板在哪」这种指针：模板目录会自动列在系统提示里，指针只会让记忆变胖。',
+        '',
+        '要补充记忆用 remember；要查更早的记录用 recall。'
+      )
+    }
+  } catch {
+    /* 读不到就当没有记忆 */
   }
 
   return lines.join('\n')

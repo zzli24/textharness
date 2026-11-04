@@ -561,6 +561,40 @@
   gap: 6px;
   padding: 0 2px;
   min-width: 0;
+  /* 一行到底：空间不够时让 hint/usage 省略，别让 chip 里的字竖着换行 */
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+/* 这几个是固定宽度的图标按钮，不许被压缩 */
+#ai-attach,
+#ai-selection {
+  flex: none;
+}
+
+/* chip 里的中文一旦被压到窄于文字宽度，就会一字一行：
+   所以保持 nowrap，宽不够时用省略号截断，而不是竖着换行 */
+.chip-toggle {
+  flex: 0 1 auto;
+  min-width: 46px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 用量是固定几段数字，别截断；让 hint 去省略 */
+.usage-chip {
+  flex: none;
+}
+
+/* spacer 可以被压缩，否则前面的元素会溢出 */
+.composer-bar .spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hint-inline {
+  flex: 0 1 auto;
 }
 
 /* 停止按钮是文字按钮，不能用 26×26 的圆形图标样式，否则会竖排 */
@@ -874,4 +908,100 @@
   50% {
     opacity: 0;
   }
+}
+
+
+.usage-chip {
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-family: 'Cascadia Code', Consolas, monospace;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  cursor: help;
+  white-space: nowrap;
+}
+
+.usage-chip[hidden] {
+  display: none;
+}
+
+/* 运行中（停止按钮可见）时把上下文 chip 收起来：
+   这一行还要放用量、工具提示和停止按钮，硬挤会把 chip 的字压成竖排 */
+.composer-bar:has(#ai-stop:not([hidden])) .chip-toggle {
+  display: none;
+}
+
+/* ---------- 右侧对话轮次线 ---------- */
+.turn-rail {
+  position: absolute;
+  right: 3px;
+  width: 10px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.turn-tick {
+  position: absolute;
+  right: 2px;
+  width: 6px;
+  height: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--fg-dim) 38%, transparent);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: width 0.12s, background 0.12s;
+}
+
+/* 视口里正在看的那一轮：更长更实，像参考图里那根黑条 */
+.turn-tick.current {
+  width: 11px;
+  background: var(--fg);
+}
+
+.turn-tick:hover {
+  width: 13px;
+  background: var(--accent);
+}
+
+/* 悬停卡片：这一轮的问题 + 回答开头 */
+.turn-preview {
+  position: absolute;
+  width: 280px;
+  z-index: 6;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-2) 92%, transparent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.turn-preview[hidden] {
+  display: none;
+}
+
+.turn-preview-q {
+  font-size: 12.5px;
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.turn-preview-a {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

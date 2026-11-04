@@ -3,6 +3,8 @@ import type {
   AccessRequest,
   ApprovalRequest,
   ScriptRequest,
+  SelectionInfo,
+  ToolListItem,
   UpdateEvent,
   AppConfig,
   ChatDelta,
@@ -43,6 +45,7 @@ const api = {
     pickOpen: () => ipcRenderer.invoke('fs:pickOpen') as Promise<string | null>,
     allow: (path: string) => ipcRenderer.invoke('fs:allow', path) as Promise<boolean>,
     pickImage: () => ipcRenderer.invoke('fs:pickImage') as Promise<string | null>,
+    pickImages: () => ipcRenderer.invoke('fs:pickImages') as Promise<string[]>,
     importImage: (sourcePath: string) =>
       ipcRenderer.invoke('fs:importImage', sourcePath) as Promise<{ path: string; name: string } | null>,
     readImageData: (sourcePath: string) =>
@@ -59,16 +62,140 @@ const api = {
       ipcRenderer.invoke('assets:save', input) as Promise<string>,
     info: () => ipcRenderer.invoke('assets:info') as Promise<{ dir: string; today: string }>,
   },
+  editor: {
+    onAppRpc: (cb: (payload: { id: string; action: string; payload?: unknown }) => void) => {
+      ipcRenderer.on('app:rpc', (_event, payload: { id: string; action: string; payload?: unknown }) => cb(payload))
+    },
+    appReply: (payload: { id: string; ok: boolean; data?: unknown; text: string }) =>
+      ipcRenderer.send('app:rpc:reply', payload),
+    /** 仅开发期：直接触发一次应用控制，用来验证链路 */
+    debugApp: (action: string, payload?: unknown) =>
+      ipcRenderer.invoke('debug:app', action, payload) as Promise<{ ok: boolean; data?: unknown; text: string }>,
+    onSelectionRequest: (cb: (payload: { id: string }) => void) => {
+      ipcRenderer.on('editor:selection:request', (_event, payload: { id: string }) => cb(payload))
+    },
+    selectionReply: (payload: SelectionInfo) => ipcRenderer.send('editor:selection:reply', payload),
+    onSelectionReplace: (cb: (payload: { id: string; text: string; from: number; to: number }) => void) => {
+      ipcRenderer.on('editor:selection:replace', (_event, payload: { id: string; text: string; from: number; to: number }) => cb(payload))
+    },
+    selectionReplaced: (payload: { id: string; ok: boolean }) => ipcRenderer.send('editor:selection:replaced', payload),
+  },
+  archive: {
+    categories: () => ipcRenderer.invoke('archive:categories') as Promise<string[]>,
+    notes: () => ipcRenderer.invoke('archive:notes') as Promise<string[]>,
+    headings: (path: string) =>
+      ipcRenderer.invoke('archive:headings', path) as Promise<{
+        ok: boolean
+        headings: Array<{ level: number; text: string; line: number }>
+        text?: string
+      }>,
+    append: (path: string, section: string, afterLine?: number) =>
+      ipcRenderer.invoke('archive:append', path, section, afterLine) as Promise<{
+        ok: boolean
+        path: string
+        text: string
+        undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+      }>,
+    noteContent: (path: string) =>
+      ipcRenderer.invoke('archive:noteContent', path) as Promise<{ ok: boolean; text: string }>,
+    write: (request: {
+      target: 'knowledge' | 'memory'
+      category?: string
+      title: string
+      content: string
+      memoryKind?: 'fact' | 'log' | 'template'
+      onConflict?: 'append' | 'overwrite' | 'rename'
+      source?: string
+    }) =>
+      ipcRenderer.invoke('archive:write', request) as Promise<{
+        ok: boolean
+        path: string
+        undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+        text: string
+      }>,
+    undo: (undo: { path: string; action: 'delete' | 'restore'; previous?: string }) =>
+      ipcRenderer.invoke('archive:undo', undo) as Promise<boolean>,
+    resetGrant: () => ipcRenderer.invoke('archive:resetGrant') as Promise<{ ok: boolean }>,
+    draftList: () =>
+      ipcRenderer.invoke('archive:draftList') as Promise<{
+        drafts: Array<Record<string, unknown>>
+        pending: number
+        workspace: string
+      }>,
+    draftCreate: (input: {
+      title: string
+      content: string
+      target: 'knowledge' | 'memory'
+      category?: string
+      memoryKind?: 'fact' | 'log' | 'template'
+      source?: string
+      mergeInto?: string
+      summarize: boolean
+    }) => ipcRenderer.invoke('archive:draftCreate', input) as Promise<{ draft: Record<string, unknown>; pending: number }>,
+    draftUpdate: (id: string, patch: { title?: string; content?: string }) =>
+      ipcRenderer.invoke('archive:draftUpdate', id, patch) as Promise<{ draft: Record<string, unknown>; pending: number }>,
+    draftDiscard: (id: string) => ipcRenderer.invoke('archive:draftDiscard', id) as Promise<{ pending: number }>,
+    draftConfirm: (id: string, force = false) =>
+      ipcRenderer.invoke('archive:draftConfirm', id, force) as Promise<{
+        ok: boolean
+        path?: string
+        text?: string
+        pending?: number
+        undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+      }>,
+    draftRegenerate: (id: string) =>
+      ipcRenderer.invoke('archive:draftRegenerate', id) as Promise<{ ok: boolean; pending?: number; text?: string }>,
+    onDraftChanged: (cb: (payload: { pending: number }) => void) => {
+      ipcRenderer.on('archive:draftChanged', (_event, payload: { pending: number }) => cb(payload))
+    },
+  },
+  mcp: {
+    status: () =>
+      ipcRenderer.invoke('mcp:status') as Promise<
+        Array<{ name: string; enabled: boolean; command: string; connected: boolean; tools: number; error?: string }>
+      >,
+    reconnect: (name: string) =>
+      ipcRenderer.invoke('mcp:reconnect', name) as Promise<
+        Array<{ name: string; enabled: boolean; command: string; connected: boolean; tools: number; error?: string }>
+      >,
+  },
+  memory: {
+    snapshot: () =>
+      ipcRenderer.invoke('memory:snapshot') as Promise<{
+        facts: string
+        factsFull: string
+        recentLogs: string[]
+        exists: boolean
+        files: Array<{ path: string; size: number; mtime: number }>
+        templates: Array<{ path: string; title: string }>
+      }>,
+    save: (content: string) => ipcRenderer.invoke('memory:save', content) as Promise<{ ok: boolean }>,
+    ensure: () => ipcRenderer.invoke('memory:ensure') as Promise<{ ok: boolean }>,
+    reveal: () => ipcRenderer.invoke('memory:reveal') as Promise<{ ok: boolean }>,
+    buildSemantic: () => ipcRenderer.invoke('memory:buildSemantic') as Promise<{ ok: boolean; lines?: number; reason?: string }>,
+    semanticStatus: () =>
+      ipcRenderer.invoke('memory:semanticStatus') as Promise<{ available: boolean; enabled: boolean; reason?: string }>,
+  },
+  tools: {
+    list: () => ipcRenderer.invoke('tools:list') as Promise<ToolListItem[]>,
+  },
   ai: {
     model: () => ipcRenderer.invoke('ai:model'),
     models: () => ipcRenderer.invoke('ai:models') as Promise<{ models: string[]; error?: string }>,
-    chat: (payload: { id: string; messages: ChatMessage[] }) => ipcRenderer.invoke('ai:chat', payload),
+    chat: (payload: { id: string; messages: ChatMessage[]; knowledgeMode?: boolean }) =>
+      ipcRenderer.invoke('ai:chat', payload),
     abort: (id: string) => ipcRenderer.send('ai:abort', id),
     onDelta: (cb: (delta: ChatDelta) => void) => {
       ipcRenderer.on('ai:delta', (_event, delta: ChatDelta) => cb(delta))
     },
     onDone: (cb: (done: ChatDone) => void) => {
       ipcRenderer.on('ai:done', (_event, done: ChatDone) => cb(done))
+    },
+    onUsage: (cb: (usage: { prompt: number; completion: number; reasoning: number; cached: number; estimated: boolean }) => void) => {
+      ipcRenderer.on('ai:usage', (_event, usage) => cb(usage))
+    },
+    onRetry: (cb: (payload: { attempt: number; reason: string }) => void) => {
+      ipcRenderer.on('ai:retry', (_event, payload) => cb(payload))
     },
     onTool: (cb: (event: ToolEventPayload) => void) => {
       ipcRenderer.on('ai:tool', (_event, payload: ToolEventPayload) => cb(payload))
@@ -77,6 +204,21 @@ const api = {
       ipcRenderer.on('ai:approval', (_event, request: ApprovalRequest) => cb(request))
     },
     approvalResult: (id: string, ok: boolean) => ipcRenderer.send('ai:approval:result', { id, ok }),
+    onConfirm: (
+      cb: (request: {
+        id: string
+        title: string
+        message: string
+        detail?: string
+        buttons: string[]
+        primaryId?: number
+        defaultId?: number
+        cancelId?: number
+      }) => void
+    ) => {
+      ipcRenderer.on('ui:confirm', (_event, request) => cb(request))
+    },
+    replyConfirm: (id: string, index: number) => ipcRenderer.send('ui:confirm:reply', { id, index }),
     openUrl: (url: string) => ipcRenderer.invoke('app:openUrl', url) as Promise<void>,
     updateCheck: () => ipcRenderer.invoke('update:check') as Promise<void>,
     updateInstall: () => ipcRenderer.invoke('update:install') as Promise<void>,

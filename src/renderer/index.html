@@ -9,6 +9,7 @@
   </head>
   <body>
     <div id="app">
+      <div id="bg-scrim" aria-hidden="true"></div>
 <nav id="activity" aria-label="工具栏">
         <button class="act-btn" id="act-files" title="文件树（Ctrl+B）" aria-label="文件树">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6l2 2h6a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></svg>
@@ -61,6 +62,7 @@
         </div>
 <div id="editor-host">
           <div id="pane-left" class="editor-pane"></div>
+          <div id="split-resizer" class="gutter split-gutter" title="拖动调整两栏宽度（双击恢复各半）" hidden></div>
           <div id="pane-right" class="editor-pane" hidden>
             <div id="split-head">
               <span id="split-title">右侧文档</span>
@@ -88,6 +90,10 @@
           <button id="ai-model" class="ai-model" title="点击切换模型">deepseek</button>
           <button id="ai-history" class="icon-btn" title="历史会话">🕘</button>
           <button id="ai-new" class="icon-btn" title="新建会话">＋</button>
+          <button id="ai-drafts" class="icon-btn has-badge" title="归档草稿：待确认">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h7l5 5v12H6z"/><path d="M13 3.5v5h5"/><path d="M9 13h6M9 16.5h4"/></svg>
+            <span id="ai-drafts-badge" class="badge" hidden>0</span>
+          </button>
           <button id="ai-hide" class="icon-btn" title="收起">⟩</button>
         </header>
         <div id="ai-body">
@@ -101,16 +107,26 @@
             <button id="ai-scroll-bottom" class="scroll-bottom" hidden title="回到底部">↓</button>
             <div id="ai-composer" class="composer">
               <div class="composer-box">
+                <div id="ai-attach-row" class="composer-attach" hidden></div>
                 <textarea id="ai-input" rows="1" placeholder="给 agent 派活，或直接问…"></textarea>
                 <div class="composer-bar">
-                  <button id="ai-selection" class="ghost-btn" title="把编辑器里选中的文字插入到输入框">＋</button>
+                  <button id="ai-attach" class="ghost-btn round-btn" title="添加图片（也可以直接粘贴或拖进来）">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                  <button id="ai-selection" class="ghost-btn round-btn" title="把编辑器里选中的文字插入到输入框（也可以直接勾选下面的「选中文字」）">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6v12"/><path d="M11 8.5h7M11 12h5M11 15.5h7"/></svg>
+                  </button>
                   <label class="chip-toggle" title="发送时，把编辑器里选中的文字一起带给模型"
                     ><input type="checkbox" id="ctx-selection" /> 选中文字</label
                   >
                   <label class="chip-toggle" title="发送时，把当前打开文件的全文一起带给模型"
                     ><input type="checkbox" id="ctx-file" /> 整个文件</label
                   >
+                  <label class="chip-toggle chip-knowledge" title="勾上后，这一轮 agent 才会主动查 知识库/；不勾就直接回答"
+                    ><input type="checkbox" id="ctx-knowledge" /> 知识库</label
+                  >
                   <span class="spacer"></span>
+                  <span id="ai-usage" class="usage-chip" hidden></span>
                   <span id="ai-hint" class="hint-inline"></span>
                   <button id="ai-stop" class="ghost-btn" hidden>停止</button>
                   <button id="ai-send" class="send-btn" title="发送（Enter 发送，Shift+Enter 换行）">↑</button>
@@ -128,6 +144,9 @@
         <span class="spacer"></span>
         <button id="st-json" class="st-btn icon-only" title="格式化 JSON（Ctrl+Alt+J，有选中就只处理选中部分）">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4c-2 0-3 1-3 3v3c0 1.5-1 2.5-2.5 2.5 1.5 0 2.5 1 2.5 2.5v3c0 2 1 3 3 3"/><path d="M15 4c2 0 3 1 3 3v3c0 1.5 1 2.5 2.5 2.5-1.5 0-2.5 1-2.5 2.5v3c0 2-1 3-3 3"/></svg>
+        </button>
+        <button id="st-tools" class="st-btn icon-only" title="文本工具：去重、排序、编码、提取（点开选，作用于选中内容）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3.2 7.4h8.1M16.5 7.4h4.3M3.2 16.6h4.3M12.6 16.6h8.2"/><circle cx="13.9" cy="7.4" r="2.3"/><circle cx="10" cy="16.6" r="2.3"/></svg>
         </button>
         <button id="st-source" class="st-btn icon-only" title="在表格视图和源码之间切换">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-4 5 4 5"/><path d="M15 7l4 5-4 5"/></svg>

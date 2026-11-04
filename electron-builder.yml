@@ -10,6 +10,10 @@ files:
   - out/**/*
   - package.json
   - '!**/*.map'
+  # 语义检索只需要当前平台的原生库：排除 macOS/Linux 的 onnxruntime，
+  # 否则安装包会白胖 70+ MB（onnxruntime-node 全平台合计 92 MB）
+  - '!node_modules/onnxruntime-node/bin/napi-v3/darwin/**'
+  - '!node_modules/onnxruntime-node/bin/napi-v3/linux/**'
 
 asar: true
 compression: maximum

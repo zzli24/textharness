@@ -1,5 +1,15 @@
 import type { ChatMessage, ModelInfo, SessionSummary, StoredSession, StoredTool, ToolEventPayload } from '@shared/types'
 import { requestApproval } from './approval'
+import { openArchivePanel } from './archivePanel'
+
+/** 待发送的图片附件 */
+interface Attachment {
+  id: string
+  name: string
+  path: string
+  /** 降采样后的 data URL，发给模型用 */
+  dataUrl: string
+}
 
 export interface ChatDeps {
   getSelectionText(): string
@@ -9,12 +19,16 @@ export interface ChatDeps {
   getWorkspaceLabel(): string
   /** 还没配置模型时，引导用户去设置 */
   onNeedConfig(): void
+  /** 在面板里切了模型，通知外层同步配置 */
+  onModelChanged?(name: string): void
 }
 
 interface UiMessage {
   role: 'user' | 'assistant'
   content: string
   apiContent: string
+  /** 这条消息带的图片 data URL */
+  images?: string[]
   reasoning: string
   tools: StoredTool[]
   el: HTMLDivElement
@@ -204,17 +218,202 @@ export function createChat(deps: ChatDeps): ChatApi {
   const stopBtn = document.getElementById('ai-stop') as HTMLButtonElement
   const ctxSelection = document.getElementById('ctx-selection') as HTMLInputElement
   const ctxFile = document.getElementById('ctx-file') as HTMLInputElement
+  const ctxKnowledge = document.getElementById('ctx-knowledge') as HTMLInputElement
   const modelEl = document.getElementById('ai-model') as HTMLSpanElement
   const hintEl = document.getElementById('ai-hint') as HTMLSpanElement
+  const usageEl = document.getElementById('ai-usage') as HTMLSpanElement
+
+  /* ---------------- 右侧对话轮次线 ---------------- */
+  /**
+   * 每一轮问答在右侧留一个短刻度：
+   *  - 悬停刻度弹出卡片，显示这一轮的问题 + 回答开头（不用滚回去找）
+   *  - 当前视口所在的那一轮刻度更长更实
+   *  - 点一下跳到这一轮
+   */
+  function setupTurnRail(): void {
+    const chatRoot = messagesEl.parentElement
+    if (!chatRoot) return
+
+    const rail = document.createElement('div')
+    rail.className = 'turn-rail'
+    chatRoot.appendChild(rail)
+
+    const preview = document.createElement('div')
+    preview.className = 'turn-preview'
+    preview.hidden = true
+    chatRoot.appendChild(preview)
+
+    interface TurnInfo {
+      el: HTMLElement
+      question: string
+      answer: string
+    }
+
+    /** 把消息流切成「一问一答」的轮次 */
+    function collectTurns(): TurnInfo[] {
+      const nodes = [...messagesEl.querySelectorAll<HTMLElement>('.msg')]
+      const turns: TurnInfo[] = []
+      let current: TurnInfo | null = null
+      /** 只取正文：去掉「思考过程」和工具卡片，否则摘要里全是「完成 · 22ms」 */
+      const cleanText = (node: HTMLElement): string => {
+        const clone = node.cloneNode(true) as HTMLElement
+        clone.querySelectorAll('.thinking, .tool').forEach((child) => child.remove())
+        return (clone.innerText || '').replace(/\s+/g, ' ').trim()
+      }
+
+      for (const node of nodes) {
+        const text = cleanText(node)
+        if (node.classList.contains('user')) {
+          if (current) turns.push(current)
+          current = { el: node, question: text, answer: '' }
+          continue
+        }
+        // 助手消息：把这一轮里所有助手输出的开头拼起来
+        if (current && !current.answer && text) current.answer = text
+      }
+      if (current) turns.push(current)
+      return turns
+    }
+
+    let turns: TurnInfo[] = []
+    let activeIndex = -1
+
+    const showPreview = (turn: TurnInfo, tick: HTMLElement): void => {
+      preview.textContent = ''
+      const q = document.createElement('div')
+      q.className = 'turn-preview-q'
+      q.textContent = turn.question.slice(0, 80) || '（空提问）'
+      const a = document.createElement('div')
+      a.className = 'turn-preview-a'
+      a.textContent = turn.answer.slice(0, 160) || '（还没有回答）'
+      preview.append(q, a)
+      preview.hidden = false
+
+      const chatRect = chatRoot.getBoundingClientRect()
+      const tickRect = tick.getBoundingClientRect()
+      const width = 280
+      const left = Math.max(8, chatRect.width - width - 22)
+      preview.style.left = `${left}px`
+      // 卡片以刻度为中心竖直对齐，但不越出聊天区
+      const wanted = tickRect.top - chatRect.top + tickRect.height / 2 - preview.offsetHeight / 2
+      const maxTop = chatRect.height - preview.offsetHeight - 8
+      preview.style.top = `${Math.max(8, Math.min(wanted, Math.max(8, maxTop)))}px`
+    }
+
+    const hidePreview = (): void => {
+      preview.hidden = true
+    }
+
+    const render = (): void => {
+      const chatRect = chatRoot.getBoundingClientRect()
+      const msgRect = messagesEl.getBoundingClientRect()
+      rail.style.top = `${Math.max(0, msgRect.top - chatRect.top)}px`
+      rail.style.height = `${Math.max(0, msgRect.height)}px`
+
+      turns = collectTurns()
+      // 刻度等距：轮次多了也不会挤成一条线
+      const count = turns.length
+      const gap = count > 1 ? Math.min(18, Math.max(4, (msgRect.height - 8) / count)) : 0
+      // 刻度组整体居中：轮次少的时候不要挤在顶部
+      const groupHeight = count > 1 ? (count - 1) * gap : 0
+      const startY = Math.max(4, (msgRect.height - groupHeight) / 2)
+      const scrollTop = messagesEl.scrollTop
+      const nextActive = (() => {
+        let index = -1
+        turns.forEach((turn, i) => {
+          if (turn.el.offsetTop <= scrollTop + 24) index = i
+        })
+        return index
+      })()
+
+      rail.textContent = ''
+      turns.forEach((turn, index) => {
+        const tick = document.createElement('button')
+        tick.type = 'button'
+        tick.className = 'turn-tick'
+        if (index === nextActive) tick.classList.add('current')
+        tick.style.top = `${startY + index * gap}px`
+        tick.addEventListener('mouseenter', () => showPreview(turn, tick))
+        tick.addEventListener('mouseleave', hidePreview)
+        tick.addEventListener('focus', () => showPreview(turn, tick))
+        tick.addEventListener('blur', hidePreview)
+        tick.addEventListener('click', () => {
+          turn.el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          hidePreview()
+        })
+        rail.appendChild(tick)
+      })
+      activeIndex = nextActive
+    }
+
+    let raf = 0
+    const schedule = (): void => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        render()
+      })
+    }
+
+    new MutationObserver(schedule).observe(messagesEl, { childList: true, subtree: true, characterData: true })
+    messagesEl.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    rail.addEventListener('mouseleave', hidePreview)
+    schedule()
+    void activeIndex
+  }
+
+  /* 用量：本轮 + 本会话累计 */
+  let turnUsage = { prompt: 0, completion: 0, reasoning: 0, cached: 0, estimated: false }
+  let sessionUsage = { prompt: 0, completion: 0, reasoning: 0, cached: 0 }
+  const fmt = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+
+  function renderUsage(): void {
+    if (turnUsage.prompt + turnUsage.completion === 0) {
+      usageEl.hidden = true
+      return
+    }
+    usageEl.hidden = false
+    const star = turnUsage.estimated ? '~' : ''
+    usageEl.textContent = `${star}↑${fmt(turnUsage.prompt)} ↓${fmt(turnUsage.completion)}`
+    usageEl.title = [
+      `本轮：输入 ${turnUsage.prompt} · 输出 ${turnUsage.completion}${turnUsage.reasoning ? `（思考 ${turnUsage.reasoning}）` : ''}${turnUsage.cached ? ` · 命中缓存 ${turnUsage.cached}` : ''}`,
+      turnUsage.estimated ? '（服务端没返回用量，按字符估算）' : '',
+      `本会话累计：输入 ${sessionUsage.prompt} · 输出 ${sessionUsage.completion}`,
+    ]
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  window.th.ai.onRetry(({ attempt, reason }) => {
+    hintEl.textContent = `重试中（第 ${attempt} 次 · ${reason}）`
+  })
+
+  window.th.ai.onUsage((usage) => {
+    turnUsage = { ...turnUsage, ...usage }
+    sessionUsage = {
+      prompt: sessionUsage.prompt + usage.prompt,
+      completion: sessionUsage.completion + usage.completion,
+      reasoning: sessionUsage.reasoning + usage.reasoning,
+      cached: sessionUsage.cached + usage.cached,
+    }
+    renderUsage()
+  })
   const scrollBtn = document.getElementById('ai-scroll-bottom') as HTMLButtonElement
+  const attachBtn = document.getElementById('ai-attach') as HTMLButtonElement | null
+  const attachRow = document.getElementById('ai-attach-row') as HTMLDivElement | null
 
   const messages: UiMessage[] = []
+  /** 勾选待归档的消息 */
+  const picked = new Set<UiMessage>()
+  let archiveBar: HTMLDivElement | null = null
   let streaming = false
   let currentId: string | null = null
   let current: UiMessage | null = null
   let toolsSinceText = false
   let sessionId: string = crypto.randomUUID()
   let modelReady = false
+  const attachments: Attachment[] = []
 
   function nearBottom(): boolean {
     return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 140
@@ -281,6 +480,121 @@ export function createChat(deps: ChatDeps): ChatApi {
     })
   }
 
+  function pushToast(message: string): void {
+    document.dispatchEvent(new CustomEvent('th:toast', { detail: message }))
+  }
+
+  function refreshArchiveBar(): void {
+    if (!archiveBar) return
+    const count = picked.size
+    archiveBar.hidden = count === 0
+    if (count === 0) return
+    const label = archiveBar.querySelector('.archive-bar-count')
+    if (label) label.textContent = `${count} 条`
+  }
+
+  function togglePick(msg: UiMessage): void {
+    if (picked.has(msg)) picked.delete(msg)
+    else picked.add(msg)
+    msg.el.classList.toggle('picked', picked.has(msg))
+    const box = msg.el.querySelector('.msg-check')
+    if (box) box.textContent = picked.has(msg) ? '✓' : ''
+    refreshArchiveBar()
+  }
+
+  /** 给消息挂一个 hover 才出现的勾选圈 */
+  /** 元素先挂按钮，等 UiMessage 构造完再补 click 绑定 */
+  const pendingCheck = new WeakMap<HTMLElement, HTMLButtonElement>()
+  function attachCheckForEl(el: HTMLElement): void {
+    const box = document.createElement('button')
+    box.type = 'button'
+    box.className = 'msg-check'
+    box.title = '勾选后可以归档'
+    el.appendChild(box)
+    pendingCheck.set(el, box)
+  }
+
+  function attachCheck(msg: UiMessage): void {
+    const box = pendingCheck.get(msg.el) ?? document.createElement('button')
+    box.addEventListener('click', (event) => {
+      event.stopPropagation()
+      togglePick(msg)
+    })
+  }
+
+  function pickedText(): { title: string; content: string } {
+    const ordered = messages.filter((msg) => picked.has(msg))
+    const firstUser = ordered.find((msg) => msg.role === 'user')
+    const title = (firstUser?.content ?? ordered[0]?.content ?? '归档内容')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 30)
+    const parts: string[] = []
+    for (const msg of ordered) {
+      const text = msg.content.trim()
+      if (!text) continue
+      parts.push(msg.role === 'user' ? `## 问：${text}` : text)
+    }
+    return { title, content: parts.join('\n\n') }
+  }
+
+  function ensureArchiveBar(): void {
+    if (archiveBar) return
+    const bar = document.createElement('div')
+    bar.className = 'archive-bar'
+    bar.hidden = true
+
+    const count = document.createElement('span')
+    count.className = 'archive-bar-count'
+    const toKnowledge = document.createElement('button')
+    toKnowledge.className = 'btn small primary'
+    toKnowledge.textContent = '归档'
+    toKnowledge.addEventListener('click', () => {
+      const { title, content } = pickedText()
+      openArchivePanel(
+        { target: 'knowledge', title, content, source: 'chat' },
+        {
+          toast: pushToast,
+          onWritten: () => {
+            for (const msg of [...picked]) togglePick(msg)
+          },
+        }
+      )
+    })
+
+    const toMemory = document.createElement('button')
+    toMemory.className = 'btn small'
+    toMemory.textContent = '记记忆'
+    toMemory.addEventListener('click', () => {
+      const { title, content } = pickedText()
+      const brief = content.replace(/\s+/g, ' ').trim().slice(0, 180)
+      openArchivePanel(
+        { target: 'memory', memoryKind: 'log', title, content: brief, source: 'chat' },
+        {
+          toast: pushToast,
+          onWritten: () => {
+            for (const msg of [...picked]) togglePick(msg)
+          },
+        }
+      )
+    })
+
+    const clear = document.createElement('button')
+    clear.className = 'btn small'
+    clear.textContent = '取消'
+    clear.addEventListener('click', () => {
+      for (const msg of [...picked]) togglePick(msg)
+    })
+
+    bar.append(count, toKnowledge, toMemory, clear)
+    // 放进输入卡片内部（textarea 上方），和输入框同属一个 .composer-box，绝不会叠
+    const box = document.querySelector('#ai-composer .composer-box')
+    const textarea = document.getElementById('ai-input')
+    if (box && textarea) box.insertBefore(bar, textarea)
+    else messagesEl.parentElement?.appendChild(bar)
+    archiveBar = bar
+  }
+
   function newAssistant(): UiMessage {
     const el = document.createElement('div')
     el.className = 'msg assistant'
@@ -293,6 +607,7 @@ export function createChat(deps: ChatDeps): ChatApi {
 
     el.append(bodyEl, toolBox)
     messagesEl.appendChild(el)
+    attachCheckForEl(el)
 
     const msg: UiMessage = {
       role: 'assistant',
@@ -306,18 +621,32 @@ export function createChat(deps: ChatDeps): ChatApi {
       thinkingEl: null,
       done: false,
     }
+    attachCheck(msg)
+    ensureArchiveBar()
     scrollToBottom(true)
     return msg
   }
 
-  function addUserMessage(display: string, apiContent: string): UiMessage {
+  function addUserMessage(display: string, apiContent: string, images: string[] = []): UiMessage {
     const el = document.createElement('div')
     el.className = 'msg user'
     const bodyEl = document.createElement('div')
     bodyEl.className = 'msg-body'
     bodyEl.innerHTML = renderMarkdown(display)
     el.appendChild(bodyEl)
+    if (images.length > 0) {
+      const strip = document.createElement('div')
+      strip.className = 'msg-images'
+      for (const src of images) {
+        const img = document.createElement('img')
+        img.src = src
+        img.alt = '附图'
+        strip.appendChild(img)
+      }
+      el.appendChild(strip)
+    }
     messagesEl.appendChild(el)
+    attachCheckForEl(el)
 
     const msg: UiMessage = {
       role: 'user',
@@ -331,6 +660,8 @@ export function createChat(deps: ChatDeps): ChatApi {
       thinkingEl: null,
       done: true,
     }
+    attachCheck(msg)
+    ensureArchiveBar()
     messages.push(msg)
     scrollToBottom(true)
     return msg
@@ -451,6 +782,154 @@ export function createChat(deps: ChatDeps): ChatApi {
     return parts.length ? `${parts.join('\n\n')}\n\n---\n\n` : ''
   }
 
+  /** 大图先降采样：既省 token 也避免请求体过大 */
+  async function shrinkDataUrl(src: string, max = 1400, quality = 0.82): Promise<string> {
+    try {
+      const img = new Image()
+      img.src = src
+      await img.decode()
+      const scale = Math.min(1, max / Math.max(img.width, img.height))
+      if (scale === 1 && src.length < 800_000) return src
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(img.width * scale))
+      canvas.height = Math.max(1, Math.round(img.height * scale))
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return src
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      return canvas.toDataURL('image/jpeg', quality)
+    } catch {
+      return src
+    }
+  }
+
+  function renderAttachments(): void {
+    if (!attachRow) return
+    attachRow.textContent = ''
+    attachRow.hidden = attachments.length === 0
+    for (const item of attachments) {
+      const chip = document.createElement('div')
+      chip.className = 'attach-chip'
+      chip.title = item.name
+      const img = document.createElement('img')
+      img.src = item.dataUrl
+      img.alt = item.name
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'attach-remove'
+      remove.textContent = '✕'
+      remove.title = '移除这张图'
+      remove.addEventListener('click', () => {
+        const index = attachments.findIndex((a) => a.id === item.id)
+        if (index >= 0) attachments.splice(index, 1)
+        renderAttachments()
+      })
+      chip.append(img, remove)
+      attachRow.appendChild(chip)
+    }
+  }
+
+  async function addAttachmentFromPath(path: string): Promise<void> {
+    try {
+      const info = await window.th.fs.readImageData(path)
+      if (!info) return
+      const dataUrl = await shrinkDataUrl(info.dataUrl)
+      attachments.push({ id: crypto.randomUUID(), name: info.name, path, dataUrl })
+      renderAttachments()
+    } catch (err) {
+      deps.onError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function addAttachmentFromFile(file: File): Promise<void> {
+    const raw = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.onerror = () => reject(new Error('读不到这张图'))
+      reader.readAsDataURL(file)
+    })
+    if (!raw) return
+    const dataUrl = await shrinkDataUrl(raw)
+    attachments.push({ id: crypto.randomUUID(), name: file.name || '粘贴的图片', path: '', dataUrl })
+    renderAttachments()
+  }
+
+  /** 从 dataTransfer 取图片文件：真实拖拽/files 有值，合成事件可能只在 items 里 */
+  function imagesFromDataTransfer(dt: DataTransfer | null): File[] {
+    if (!dt) return []
+    const out: File[] = []
+    for (const file of Array.from(dt.files ?? [])) {
+      if (file.type.startsWith('image/')) out.push(file)
+    }
+    if (out.length === 0) {
+      for (const item of Array.from(dt.items ?? [])) {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
+        const file = item.getAsFile()
+        if (file) out.push(file)
+      }
+    }
+    return out
+  }
+
+  // 附件入口：按钮 / 粘贴 / 拖入
+  if (attachBtn) {
+    attachBtn.addEventListener('click', () => {
+      void window.th.fs.pickImages().then((paths) => {
+        for (const path of paths) void addAttachmentFromPath(path)
+      })
+    })
+  }
+
+  // 粘贴：挂在 document 上，焦点在输入框或面板里都能接住
+  document.addEventListener('paste', (event) => {
+    const active = document.activeElement
+    const inComposer =
+      active === inputEl || (active instanceof Element && !!active.closest('#ai-composer'))
+    if (!inComposer) return
+    const files = imagesFromDataTransfer(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    for (const file of files) void addAttachmentFromFile(file)
+  })
+
+  // 拖拽：挂在 document 捕获阶段（和粘贴一致），避免被编辑器/文件树的拖拽逻辑抢走
+  const inComposer = (target: EventTarget | null): boolean =>
+    target instanceof Element && !!target.closest('#ai-composer')
+
+  document.addEventListener(
+    'dragover',
+    (event) => {
+      if (!inComposer(event.target) || !event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+      document.getElementById('ai-composer')?.classList.add('drop-image')
+    },
+    true
+  )
+
+  document.addEventListener(
+    'dragleave',
+    (event) => {
+      if (!inComposer(event.target)) return
+      document.getElementById('ai-composer')?.classList.remove('drop-image')
+    },
+    true
+  )
+
+  document.addEventListener(
+    'drop',
+    (event) => {
+      if (!inComposer(event.target)) return
+      document.getElementById('ai-composer')?.classList.remove('drop-image')
+      const files = imagesFromDataTransfer(event.dataTransfer)
+      if (files.length === 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      for (const file of files) void addAttachmentFromFile(file)
+    },
+    true
+  )
+
   function autoGrow(): void {
     inputEl.style.height = 'auto'
     const next = Math.min(inputEl.scrollHeight, 200)
@@ -459,20 +938,41 @@ export function createChat(deps: ChatDeps): ChatApi {
     inputEl.style.overflowY = inputEl.scrollHeight > 200 ? 'auto' : 'hidden'
   }
 
+  // 选中文字和整个文件是同一件事的两种粒度，互斥；知识库开关独立
+  function syncContextExclusive(): void {
+    ctxSelection.addEventListener('change', () => {
+      if (ctxSelection.checked) ctxFile.checked = false
+    })
+    ctxFile.addEventListener('change', () => {
+      if (ctxFile.checked) ctxSelection.checked = false
+    })
+  }
+  syncContextExclusive()
+
   async function send(): Promise<void> {
+    turnUsage = { prompt: 0, completion: 0, reasoning: 0, cached: 0, estimated: false }
+    renderUsage()
     if (streaming) return
     if (!modelReady) {
       deps.onNeedConfig()
       return
     }
     const text = inputEl.value.trim()
-    if (!text) return
+    if (!text && attachments.length === 0) return
 
     messagesEl.querySelector('.empty-chat')?.remove()
     inputEl.value = ''
     autoGrow()
 
-    addUserMessage(text, buildContext() + text)
+    const images = attachments.map((item) => item.dataUrl)
+    const userMessage = addUserMessage(
+      text || (images.length > 0 ? '（看图）' : ''),
+      buildContext() + (text || '请描述这些图片的内容。'),
+      images
+    )
+    userMessage.images = images
+    attachments.length = 0
+    renderAttachments()
     void persist()
 
     const assistant = newAssistant()
@@ -491,7 +991,16 @@ export function createChat(deps: ChatDeps): ChatApi {
     const payload: ChatMessage[] = [
       { role: 'system', content: '你是内嵌在文本编辑器里的编码 agent。' },
       ...messages.map((m) => {
-        const item: ChatMessage = { role: m.role, content: m.apiContent }
+        const item: ChatMessage =
+          m.images && m.images.length > 0
+            ? {
+                role: m.role,
+                content: [
+                  { type: 'text', text: m.apiContent },
+                  ...m.images.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+                ],
+              }
+            : { role: m.role, content: m.apiContent }
         // 思考模式下 assistant 轮次必须回传 reasoning_content
         if (m.role === 'assistant' && m.reasoning) item.reasoning_content = m.reasoning
         return item
@@ -499,7 +1008,8 @@ export function createChat(deps: ChatDeps): ChatApi {
     ]
 
     try {
-      await window.th.ai.chat({ id, messages: payload })
+      await window.th.ai.chat({
+      knowledgeMode: ctxKnowledge.checked, id, messages: payload })
     } catch (err) {
       finish({ id, error: err instanceof Error ? err.message : String(err) })
     }
@@ -672,6 +1182,7 @@ export function createChat(deps: ChatDeps): ChatApi {
       messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
+        images: m.images && m.images.length > 0 ? m.images : undefined,
         reasoning: m.reasoning || undefined,
         tools: m.tools.length ? m.tools : undefined,
       })),
@@ -700,7 +1211,7 @@ export function createChat(deps: ChatDeps): ChatApi {
 
     for (const item of session.messages) {
       if (item.role === 'user') {
-        addUserMessage(item.content, item.content)
+        addUserMessage(item.content, item.content, item.images ?? [])
         continue
       }
 
@@ -884,6 +1395,7 @@ export function createChat(deps: ChatDeps): ChatApi {
   async function pickModel(name: string): Promise<void> {
     try {
       await window.th.config.patch({ llmModel: name })
+      deps.onModelChanged?.(name)
       currentModel = name
       modelBtn.textContent = name
       modelBtn.title = `当前模型：${name}（点击切换）`
@@ -942,6 +1454,8 @@ export function createChat(deps: ChatDeps): ChatApi {
     const target = event.target as Node
     if (!modelMenu.contains(target) && !modelBtn.contains(target)) closeModelMenu()
   })
+
+  setupTurnRail()
 
   return { init, focus, pushSelection, reset, restoreLast, refreshModel }
 }

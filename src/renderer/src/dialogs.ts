@@ -57,6 +57,8 @@ export interface ConfirmSpec {
   buttons: string[]
   /** 默认聚焦的按钮下标（也是回车触发的那个） */
   defaultId?: number
+  /** 高亮成蓝色的按钮下标；不填就跟 defaultId 一致 */
+  primaryId?: number
   cancelId?: number
 }
 
@@ -94,7 +96,7 @@ export function confirmDialog(spec: ConfirmSpec): Promise<number> {
     }
 
     spec.buttons.forEach((label, index) => {
-      const el = button(label, index === (spec.defaultId ?? 0))
+      const el = button(label, index === (spec.primaryId ?? spec.defaultId ?? 0))
       el.dataset['index'] = String(index)
       el.addEventListener('click', () => finish(index))
       parts.foot.appendChild(el)
@@ -303,6 +305,18 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
     let modelName = current.llmModel
     let reasoning = current.llmReasoning ?? 'auto'
     let autoCheckUpdate = current.autoCheckUpdate !== false
+    const cfgDraft = current
+    // 服务商 key（baseURL）→ 该服务商的 Key/模型；切服务商时自动存取
+    const providerProfiles: Record<string, { apiKey: string; model: string }> = {
+      ...(current.providerProfiles ?? {}),
+    }
+    /** 当前编辑中的服务商 key：baseURL 规范化；自定义中转站用 __custom__ */
+    const profileKeyOf = (url: string): string => url.trim().replace(/\/+$/, '') || '__custom__'
+    /** 把表单里正在编辑的 Key / 模型记到当前服务商名下 */
+    const rememberProviderCreds = (): void => {
+      providerProfiles[profileKeyOf(baseUrl)] = { apiKey: apiKey.trim(), model: modelName.trim() }
+    }
+    const toolState = { enabled: [...current.enabledTools], cap: current.toolCap }
 
     // 定时任务的勾选：保存时用这份，避免被打开面板时的旧快照覆盖
     const taskEnabled = new Map<string, boolean>()
@@ -598,14 +612,15 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
       pane.appendChild(status)
 
       /* 服务商预设：选中后自动填 Base URL */
-      const PROVIDERS: Array<{ name: string; baseURL: string; model?: string }> = [
-        { name: 'DeepSeek 官方', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-        { name: '阿里云百炼（通义千问）', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
-        { name: '月之暗面 Kimi', baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-        { name: '智谱 GLM', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-plus' },
-        { name: '硅基流动 SiliconFlow', baseURL: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
-        { name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-        { name: '本地 Ollama', baseURL: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b' },
+      const PROVIDERS: Array<{ name: string; baseURL: string; model?: string; models?: string[] }> = [
+        { name: 'DeepSeek 官方', baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat', models: ['deepseek-chat', 'deepseek-reasoner'] },
+        { name: '阿里云百炼（通义千问）', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', models: ['qwen-plus', 'qwen-max', 'qwen-vl-max', 'qwen-turbo'] },
+        { name: '月之暗面 Kimi', baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k', 'kimi-latest'] },
+        { name: '智谱 GLM', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-plus', models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash', 'glm-4v-plus'] },
+        { name: '小米 MiMo', baseURL: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.6-pro', models: ['mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro-ultraspeed'] },
+      { name: '硅基流动 SiliconFlow', baseURL: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3', models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'THUDM/glm-4-9b-chat'] },
+        { name: 'OpenAI', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1', 'o4-mini'] },
+        { name: '本地 Ollama', baseURL: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b', models: ['qwen2.5:7b', 'qwen2.5:14b', 'llama3.1:8b', 'llava:latest'] },
         { name: '自定义 / 中转站', baseURL: '' },
       ]
 
@@ -638,13 +653,48 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
         baseUrl = baseUrlInput.value
       })
       const modelInput = mkInput('模型名', modelName, 'deepseek-chat')
+      // 用 datalist 做成「可下拉选，也能手填」：中转站的模型名列表拿不到，不能锁死
+      const modelDatalist = document.createElement('datalist')
+      modelDatalist.id = 'th-model-options'
+      pane.appendChild(modelDatalist)
+      modelInput.setAttribute('list', 'th-model-options')
+      const refreshModelOptions = (models: string[] | undefined): void => {
+        modelDatalist.textContent = ''
+        for (const name of models ?? []) {
+          const option = document.createElement('option')
+          option.value = name
+          modelDatalist.appendChild(option)
+        }
+      }
       modelInput.addEventListener('input', () => {
         modelName = modelInput.value
       })
+      const seedModelOptions = (models: string[] | undefined): void => {
+        const list = [...(models ?? [])]
+        if (modelName && !list.includes(modelName)) list.unshift(modelName)
+        refreshModelOptions(list)
+      }
+      seedModelOptions(PROVIDERS[Number(providerSelect.value)]?.models)
+      // 再尝试拉当前服务商的实时模型列表（需要 Key，拿不到就用手写的静态列表）
+      void window.th.ai
+        .models()
+        .then((result) => {
+          if (result.models.length === 0) return
+          const merged = [...result.models]
+          for (const name of PROVIDERS[Number(providerSelect.value)]?.models ?? []) {
+            if (!merged.includes(name)) merged.push(name)
+          }
+          if (modelName && !merged.includes(modelName)) merged.unshift(modelName)
+          refreshModelOptions(merged)
+        })
+        .catch(() => undefined)
+
       const apiKeyInput = mkInput('API Key', apiKey, 'sk-…', true)
       apiKeyInput.addEventListener('input', () => {
         apiKey = apiKeyInput.value
       })
+
+      note(pane, '每个服务商的 Key 和模型分开记住，切换服务商时自动换回来；都存在本机 config.json。')
 
       const reasoningCtl = field(pane, '推理等级')
       const reasoningSelect = document.createElement('select')
@@ -667,20 +717,266 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
       note(pane, '选非「自动」时会多发一个 reasoning_effort 字段；部分中转不支持该参数会报 400，遇到就切回自动。')
 
       providerSelect.addEventListener('change', () => {
+        rememberProviderCreds()
+
         const provider = PROVIDERS[Number(providerSelect.value)]
-        if (!provider || !provider.baseURL) return
+        if (!provider) return
+
+        // 自定义 / 中转站：保留用户已填的地址，只按地址换 Key
+        if (!provider.baseURL) {
+          const saved = providerProfiles['__custom__']
+          if (saved) {
+            apiKey = saved.apiKey
+            apiKeyInput.value = saved.apiKey
+            if (saved.model) {
+              modelName = saved.model
+              modelInput.value = saved.model
+            }
+          }
+          baseUrlInput.focus()
+          return
+        }
+
         baseUrl = provider.baseURL
         baseUrlInput.value = provider.baseURL
-        if (provider.model) {
+        seedModelOptions(provider.models)
+
+        const saved = providerProfiles[profileKeyOf(provider.baseURL)]
+        // 有存过就用存过的模型和 Key，否则用该服务商的默认模型
+        if (saved?.model) {
+          modelName = saved.model
+          modelInput.value = saved.model
+        } else if (provider.model) {
           modelName = provider.model
           modelInput.value = provider.model
-          modelInput.placeholder = provider.model
         }
-        apiKeyInput.focus()
+        if (provider.model) modelInput.placeholder = provider.model
+
+        if (saved?.apiKey) {
+          apiKey = saved.apiKey
+          apiKeyInput.value = saved.apiKey
+        } else {
+          apiKey = ''
+          apiKeyInput.value = ''
+        }
+
+        // 存过 Key 就直接去改模型名，没存过就让人填 Key
+        ;(saved?.apiKey ? modelInput : apiKeyInput).focus()
       })
     }
 
     let agentsHintRef = document.createElement('div')
+
+    const buildMemory = (pane: HTMLElement): void => {
+      title(pane, '记忆')
+      desc(pane, '偏好和约定写在 MEMORY.md（每轮对话都会带上）；一次性的结论写进日志。都是工作区里的普通 Markdown，随时能改。')
+
+      const tools = document.createElement('div')
+      tools.className = 'set-note'
+      tools.style.marginLeft = '0'
+      tools.textContent = 'agent 也能自己记：偏好说「记住……」写这里；多字段模板/清单会存到 记忆/模板/，不占每轮上下文；问「我之前说过什么」会用 recall 检索。'
+      pane.appendChild(tools)
+
+      const snapshot = {
+        facts: '',
+        recentLogs: [] as string[],
+        files: [] as Array<{ path: string; size: number; mtime: number }>,
+        templates: [] as Array<{ path: string; title: string }>,
+      }
+
+      const areaCtl = document.createElement('div')
+      areaCtl.className = 'set-field set-field-top'
+      const areaLabel = document.createElement('label')
+      areaLabel.textContent = 'MEMORY.md'
+      const areaWrap = document.createElement('div')
+      areaWrap.className = 'set-field-ctl'
+      areaCtl.append(areaLabel, areaWrap)
+      pane.appendChild(areaCtl)
+
+      const area = document.createElement('textarea')
+      area.className = 'memory-area'
+      area.spellcheck = false
+      area.rows = 10
+      area.placeholder = ['## 偏好', '- 用 PowerShell，不要 Python 脚本', '', '## 环境', '- 工作区在 D:\...'].join('\n')
+      areaWrap.appendChild(area)
+
+      const footRow = document.createElement('div')
+      footRow.className = 'memory-foot'
+      footRow.style.padding = '6px 0 0 0'
+      footRow.style.borderTop = 'none'
+      const hint = document.createElement('span')
+      hint.className = 'memory-hint'
+      hint.textContent = '失焦自动保存，下一轮对话就生效。'
+      const revealBtn = button('打开记忆目录')
+      revealBtn.classList.add('small')
+      revealBtn.addEventListener('click', () => {
+        void window.th.memory.reveal()
+      })
+      footRow.append(hint, revealBtn)
+      pane.appendChild(footRow)
+
+      // 失焦就存，省得和下面的「保存」按钮打架
+      let savedValue = ''
+      const flush = (): void => {
+        if (area.value === savedValue) return
+        void window.th.memory.save(area.value).then(() => {
+          savedValue = area.value
+          hint.textContent = '已自动保存。'
+        })
+      }
+      area.addEventListener('blur', flush)
+
+      /* 语义检索开关 */
+      const semanticRow = document.createElement('div')
+      semanticRow.className = 'set-field'
+      const semanticLabel = document.createElement('label')
+      semanticLabel.textContent = '语义检索'
+      const semanticWrap = document.createElement('div')
+      semanticWrap.className = 'set-field-ctl memory-semantic'
+      const semanticCheck = document.createElement('input')
+      semanticCheck.type = 'checkbox'
+      semanticCheck.className = 'set-check'
+      semanticCheck.checked = cfgDraft.memorySemantic === true
+      semanticCheck.addEventListener('change', () => {
+        cfgDraft.memorySemantic = semanticCheck.checked
+      })
+      const semanticText = document.createElement('span')
+      semanticText.textContent = '本地向量模型（bge-small-zh，首次会下载约 90MB）'
+      const semanticBtn = button('建索引')
+      semanticBtn.classList.add('small')
+      const semanticState = document.createElement('span')
+      semanticState.className = 'memory-semantic-state'
+      semanticBtn.addEventListener('click', () => {
+        semanticState.textContent = '建索引中…（首次要下载模型）'
+        void window.th.memory.buildSemantic().then((result) => {
+          semanticState.textContent = result.ok ? `索引好了：${result.lines} 条` : `失败：${result.reason ?? '未知原因'}`
+        })
+      })
+      void window.th.memory.semanticStatus().then((status) => {
+        if (!status.available) {
+          // 没有内置模型：开关和建索引都禁用，避免用户点了以为在下载
+          semanticCheck.disabled = true
+          semanticBtn.disabled = true
+          semanticState.textContent = status.reason ?? '本地模型不可用'
+          return
+        }
+        if (!status.enabled) {
+          semanticState.textContent = '未开启（当前用 BM25 关键词检索）'
+        } else {
+          semanticState.textContent = '已开启'
+        }
+      })
+      semanticWrap.append(semanticCheck, semanticText, semanticBtn, semanticState)
+      semanticRow.append(semanticLabel, semanticWrap)
+      pane.appendChild(semanticRow)
+
+      const logTitle = document.createElement('div')
+      logTitle.className = 'set-title'
+      logTitle.style.marginTop = '20px'
+      logTitle.textContent = '最近的会话结论'
+      pane.appendChild(logTitle)
+
+      const logs = document.createElement('div')
+      logs.className = 'memory-logs'
+      pane.appendChild(logs)
+
+      const tplTitle = document.createElement('div')
+      tplTitle.className = 'set-title'
+      tplTitle.style.marginTop = '20px'
+      tplTitle.textContent = '模板'
+      pane.appendChild(tplTitle)
+
+      const tplNote = document.createElement('div')
+      tplNote.className = 'set-note'
+      tplNote.style.marginLeft = '0'
+      tplNote.textContent = '多字段模板、申请格式、清单放这里。不进每轮上下文，模型需要时会自己去读。'
+      pane.appendChild(tplNote)
+
+      const tplList = document.createElement('div')
+      tplList.className = 'memory-files'
+      pane.appendChild(tplList)
+
+      const renderTemplates = (): void => {
+        tplList.textContent = ''
+        if (snapshot.templates.length === 0) {
+          const empty = document.createElement('div')
+          empty.className = 'memory-empty'
+          empty.textContent = '还没有模板。跟它说「把这段格式存成模板」就会出现在这里。'
+          tplList.appendChild(empty)
+          return
+        }
+        for (const tpl of snapshot.templates) {
+          const row = document.createElement('button')
+          row.className = 'memory-file'
+          row.textContent = `${tpl.title}  ·  ${tpl.path}`
+          row.addEventListener('click', () => {
+            document.dispatchEvent(new CustomEvent('th:open-path', { detail: tpl.path, bubbles: true }))
+          })
+          tplList.appendChild(row)
+        }
+      }
+
+      const filesTitle = document.createElement('div')
+      filesTitle.className = 'set-title'
+      filesTitle.style.marginTop = '20px'
+      filesTitle.textContent = '记忆目录'
+      pane.appendChild(filesTitle)
+
+      const files = document.createElement('div')
+      files.className = 'memory-files'
+      pane.appendChild(files)
+
+      const renderLogs = (): void => {
+        logs.textContent = ''
+        if (snapshot.recentLogs.length === 0) {
+          const empty = document.createElement('div')
+          empty.className = 'memory-empty'
+          empty.textContent = '还没有日志。聊出结论后让它「记一下」，或者直接在这里写。'
+          logs.appendChild(empty)
+          return
+        }
+        for (const line of snapshot.recentLogs) {
+          const item = document.createElement('div')
+          item.className = 'memory-log'
+          item.textContent = line.replace(/^-\s*/, '')
+          logs.appendChild(item)
+        }
+      }
+
+      const renderFiles = (): void => {
+        files.textContent = ''
+        if (snapshot.files.length === 0) {
+          const empty = document.createElement('div')
+          empty.className = 'memory-empty'
+          empty.textContent = '记忆目录还没建。保存一次就会创建 记忆/MEMORY.md。'
+          files.appendChild(empty)
+          return
+        }
+        for (const file of snapshot.files) {
+          const row = document.createElement('button')
+          row.className = 'memory-file'
+          row.title = `${(file.size / 1024).toFixed(1)} KB`
+          row.textContent = file.path
+          row.addEventListener('click', () => {
+            // 交给主界面打开（dialogs 不直接依赖编辑器内部函数）
+            document.dispatchEvent(new CustomEvent('th:open-path', { detail: row.textContent ?? '', bubbles: true }))
+          })
+          files.appendChild(row)
+        }
+      }
+
+      void window.th.memory.snapshot().then((data) => {
+        snapshot.facts = data.factsFull
+        snapshot.recentLogs = data.recentLogs
+        snapshot.files = data.files
+        snapshot.templates = data.templates
+        area.value = data.factsFull
+        savedValue = data.factsFull
+        renderLogs()
+        renderTemplates()
+        renderFiles()
+      })
+    }
 
     const buildAgents = (pane: HTMLElement): void => {
       title(pane, '项目约定')
@@ -850,10 +1146,10 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
       const verText = document.createElement('span')
       verText.className = 'set-version'
       verText.textContent = version ? `v${version}` : '读取失败'
-      verCtl.appendChild(verText)
-
-      const actCtl = field(pane, '手动检查')
       const checkBtn = button('立即检查')
+      checkBtn.classList.add('small')
+      checkBtn.style.marginLeft = '14px'
+      verCtl.append(verText, checkBtn)
       checkBtn.addEventListener('click', () => {
         checkBtn.disabled = true
         checkBtn.textContent = '检查中…'
@@ -867,8 +1163,217 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
             }, 1200)
           })
       })
-      actCtl.appendChild(checkBtn)
       note(pane, '检查结果会显示在状态栏右下角；没有新版本时不会有任何打扰。')
+    }
+
+    const buildTools = (pane: HTMLElement): void => {
+      title(pane, '工具能力')
+      desc(pane, 'agent 能用哪些工具。关掉的工具模型就看不到，可以缩短提示词、减少误选。')
+
+      const listBox = document.createElement('div')
+      listBox.className = 'tool-list'
+      pane.appendChild(listBox)
+
+      const status = document.createElement('div')
+      status.className = 'set-note'
+      status.textContent = '读取中…'
+      pane.appendChild(status)
+
+      const enabledSet = new Set<string>(cfgDraft.enabledTools)
+      const groups: Array<['text' | 'file' | 'app', string]> = [
+        ['text', '文本处理'],
+        ['file', '文件操作'],
+        ['app', '应用控制'],
+      ]
+
+      void window.th.tools
+        .list()
+        .then((items) => {
+          listBox.textContent = ''
+          status.textContent = ''
+          for (const [group, label] of groups) {
+            const inGroup = items.filter((item) => item.group === group)
+            if (inGroup.length === 0) continue
+
+            const head = document.createElement('div')
+            head.className = 'tool-group-label'
+            head.textContent = label
+            listBox.appendChild(head)
+
+            for (const item of inGroup) {
+              const row = document.createElement('label')
+              row.className = 'tool-row'
+              const box = document.createElement('input')
+              box.type = 'checkbox'
+              box.checked = enabledSet.size > 0 ? enabledSet.has(item.name) : item.enabled
+              box.addEventListener('change', () => {
+                if (box.checked) enabledSet.add(item.name)
+                else enabledSet.delete(item.name)
+                toolState.enabled = [...enabledSet]
+              })
+              const textWrap = document.createElement('div')
+              textWrap.className = 'tool-row-text'
+              const name = document.createElement('span')
+              name.className = 'tool-row-name'
+              name.textContent = item.label
+              if (item.dangerous) {
+                const badge = document.createElement('span')
+                badge.className = 'tool-badge'
+                badge.textContent = '需确认'
+                name.appendChild(badge)
+              }
+              const descEl = document.createElement('span')
+              descEl.className = 'tool-row-desc'
+              descEl.textContent = item.summary
+              textWrap.append(name, descEl)
+              row.append(box, textWrap)
+              listBox.appendChild(row)
+            }
+          }
+
+          const count = document.createElement('div')
+          count.className = 'set-note'
+          count.style.marginLeft = '0'
+          count.textContent = `共 ${items.length} 个内置工具`
+          listBox.appendChild(count)
+        })
+        .catch(() => {
+          status.textContent = '读取工具列表失败'
+        })
+
+      const capCtl = field(pane, '工具上限')
+      const capInput = document.createElement('input')
+      capInput.type = 'number'
+      capInput.min = '5'
+      capInput.max = '60'
+      capInput.value = String(cfgDraft.toolCap)
+      capInput.addEventListener('change', () => {
+        const value = Math.min(Math.max(Number(capInput.value) || 35, 5), 60)
+        capInput.value = String(value)
+        toolState.cap = value
+      })
+      capCtl.appendChild(capInput)
+      note(pane, '超过上限的工具不会进提示词（含以后接入的 MCP 工具），防止模型选错。')
+
+      const mcpTitle = document.createElement('div')
+      mcpTitle.className = 'set-title'
+      mcpTitle.style.marginTop = '18px'
+      mcpTitle.textContent = 'MCP 服务器'
+      pane.appendChild(mcpTitle)
+
+      note(
+        pane,
+        '接外部工具服务器（stdio / HTTP / SSE），配置和 Claude Desktop 的 mcpServers 一样。工具名会加前缀（服务器名__工具名），比如 db-kb__query。改完点保存才生效。'
+      )
+
+      const mcpList = document.createElement('div')
+      mcpList.className = 'mcp-list'
+      pane.appendChild(mcpList)
+
+      const renderMcp = (): void => {
+        mcpList.textContent = ''
+        if (cfgDraft.mcpServers.length === 0) {
+          const empty = document.createElement('div')
+          empty.className = 'set-note'
+          empty.style.marginLeft = '0'
+          empty.textContent = '还没配置服务器。下面「添加服务器」可以手填，也可以直接粘一段 JSON。'
+          mcpList.appendChild(empty)
+          return
+        }
+        for (const server of cfgDraft.mcpServers) {
+          const row = document.createElement('div')
+          row.className = 'mcp-row'
+
+          const toggle = document.createElement('input')
+          toggle.type = 'checkbox'
+          toggle.className = 'set-check'
+          toggle.checked = server.enabled
+          toggle.title = server.enabled ? '已启用' : '已停用'
+          toggle.addEventListener('change', () => {
+            server.enabled = toggle.checked
+          })
+
+          const info = document.createElement('div')
+          info.className = 'mcp-info'
+          const nameLine = document.createElement('div')
+          nameLine.className = 'mcp-name'
+          nameLine.textContent = server.name
+          const cmdLine = document.createElement('div')
+          cmdLine.className = 'mcp-cmd'
+          cmdLine.textContent = [server.command, ...(server.args ?? [])].join(' ')
+          info.append(nameLine, cmdLine)
+
+          const state = document.createElement('span')
+          state.className = 'mcp-state'
+          state.textContent = '未连接'
+          void window.th.mcp.status().then((list) => {
+            const found = list.find((item) => item.name === server.name)
+            if (!found) return
+            if (found.connected) {
+              state.textContent = `已连接 · ${found.tools} 个工具`
+              state.classList.add('ok')
+            } else {
+              state.textContent = found.error ? `连接失败：${found.error}` : '未连接'
+              state.classList.add(found.error ? 'bad' : '')
+            }
+          })
+
+          const policy = document.createElement('select')
+          policy.className = 'mcp-policy'
+          for (const [value, text] of [
+            ['confirm-write', '写操作需确认'],
+            ['confirm-all', '全部需确认'],
+            ['allow-all', '全部允许'],
+          ] as Array<[string, string]>) {
+            const option = document.createElement('option')
+            option.value = value
+            option.textContent = text
+            policy.appendChild(option)
+          }
+          policy.value = server.policy ?? 'confirm-write'
+          policy.addEventListener('change', () => {
+            server.policy = policy.value as 'confirm-write' | 'confirm-all' | 'allow-all'
+          })
+
+          const remove = document.createElement('button')
+          remove.className = 'icon-btn'
+          remove.textContent = '✕'
+          remove.title = '移除'
+          remove.addEventListener('click', () => {
+            cfgDraft.mcpServers = cfgDraft.mcpServers.filter((item) => item !== server)
+            renderMcp()
+          })
+
+          row.append(toggle, info, state, policy, remove)
+          mcpList.appendChild(row)
+        }
+      }
+      renderMcp()
+
+      const mcpActions = document.createElement('div')
+      mcpActions.className = 'mcp-actions'
+      const addBtn = button('添加服务器')
+      addBtn.classList.add('small')
+      addBtn.addEventListener('click', () => {
+        openMcpAddDialog({
+          commit: (servers) => {
+            for (const server of servers) {
+              cfgDraft.mcpServers.push({ ...server, name: server.name, enabled: true, policy: 'confirm-write' })
+            }
+            renderMcp()
+          },
+        })
+      })
+
+      const reconnectBtn = button('重新连接')
+      reconnectBtn.classList.add('small')
+      reconnectBtn.addEventListener('click', () => {
+        void window.th.mcp.reconnect('').then(() => {
+          renderMcp()
+        })
+      })
+      mcpActions.append(addBtn, reconnectBtn)
+      pane.appendChild(mcpActions)
     }
 
     const buildAbout = (pane: HTMLElement): void => {
@@ -903,7 +1408,9 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
       { id: 'look', group: '通用', label: '外观', keywords: ['背景', '壁纸', '模糊', '不透明度'], build: buildLook },
       { id: 'model', group: 'AI', label: '模型接入', keywords: ['api', 'key', 'baseurl', '推理', 'deepseek'], build: buildModel },
       { id: 'agents', group: 'AI', label: '项目约定', keywords: ['agents.md', '规则', '约定'], build: buildAgents },
+      { id: 'memory', group: 'AI', label: '记忆', keywords: ['记忆', '偏好', '日志', 'remember'], build: buildMemory },
       { id: 'tasks', group: 'AI', label: '定时任务', keywords: ['定时', '自动', '计划'], build: buildTasks },
+      { id: 'tools', group: 'AI', label: '工具能力', keywords: ['工具', 'mcp', '开关', '上限'], build: buildTools },
       { id: 'update', group: '其他', label: '更新', keywords: ['版本', '升级', '检查'], build: buildUpdate },
       { id: 'about', group: '其他', label: '关于', keywords: ['版本', '官网', '快捷键'], build: buildAbout },
     ]
@@ -925,6 +1432,10 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
     const show = (id: string): void => {
       activeId = id
       localStorage.setItem('th.settings.section', id)
+      // 防御：先清掉所有 active，避免出现两个分页同时可见
+      for (const panel of Array.from(paneWrap.querySelectorAll<HTMLElement>('.set-pane'))) {
+        panel.classList.remove('active')
+      }
       for (const [key, panel] of panes) panel.classList.toggle('active', key === id)
       for (const [key, btn] of buttons) btn.classList.toggle('on', key === id)
       const section = sections.find((s) => s.id === id)
@@ -1001,8 +1512,14 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
         llmBaseUrl: baseUrl.trim(),
         llmModel: modelName.trim(),
         llmApiKey: apiKey.trim(),
+        providerProfiles: (() => {
+          rememberProviderCreds()
+          return providerProfiles
+        })(),
         llmReasoning: reasoning,
         autoCheckUpdate,
+        enabledTools: toolState.enabled.length > 0 ? toolState.enabled : current.enabledTools,
+        toolCap: toolState.cap,
         bgImage,
         bgPreset,
         bgOpacity,
@@ -1017,3 +1534,197 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
     })
   })
 }
+
+/** 添加 MCP 服务器：多行 JSON 输入框 */
+/** 解析 Claude Desktop 格式，返回服务器列表（不写配置） */
+export interface ParsedMcpServer {
+  name: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+  transport?: 'stdio' | 'http' | 'sse'
+}
+
+/** 常见写法：streamable_http / streamableHttp / sse / http */
+function normalizeTransport(type: unknown, url: string): 'stdio' | 'http' | 'sse' {
+  const raw = String(type ?? '').toLowerCase().replace(/[^a-z]/g, '')
+  if (raw === 'sse') return 'sse'
+  if (raw.includes('http')) return 'http'
+  if (/\/sse\/?$/i.test(url)) return 'sse'
+  return 'http'
+}
+
+export function parseMcpServers(raw: string): {
+  ok: boolean
+  servers?: ParsedMcpServer[]
+  error?: string
+} {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    return { ok: false, error: `JSON 解析失败：${err instanceof Error ? err.message : String(err)}` }
+  }
+  const root = parsed as Record<string, unknown>
+  const source = (root['mcpServers'] as Record<string, unknown> | undefined) ?? root
+  if (!source || typeof source !== 'object') return { ok: false, error: '没有找到 mcpServers 结构' }
+
+  const servers: ParsedMcpServer[] = []
+  for (const [name, value] of Object.entries(source)) {
+    const entry = value as {
+      command?: unknown
+      args?: unknown
+      env?: unknown
+      url?: unknown
+      headers?: unknown
+      type?: unknown
+    }
+    const command = typeof entry?.command === 'string' ? entry.command.trim() : ''
+    const url = typeof entry?.url === 'string' ? entry.url.trim() : ''
+
+    if (!command && !url) {
+      return { ok: false, error: `服务器 ${name} 既没有 command（stdio）也没有 url（http/sse）` }
+    }
+    if (url && !/^https?:\/\//i.test(url)) {
+      return { ok: false, error: `服务器 ${name} 的 url 必须以 http:// 或 https:// 开头` }
+    }
+    if (entry.args !== undefined && !Array.isArray(entry.args)) {
+      return { ok: false, error: `服务器 ${name} 的 args 必须是数组` }
+    }
+    servers.push({
+      name,
+      command: command || undefined,
+      args: command ? (Array.isArray(entry.args) ? entry.args.map((item) => String(item)) : []) : undefined,
+      env: entry.env && typeof entry.env === 'object' ? (entry.env as Record<string, string>) : undefined,
+      url: url || undefined,
+      headers:
+        entry.headers && typeof entry.headers === 'object' ? (entry.headers as Record<string, string>) : undefined,
+      transport: url ? normalizeTransport(entry.type, url) : 'stdio',
+    })
+  }
+  if (servers.length === 0) return { ok: false, error: '没有解析出任何服务器' }
+  return { ok: true, servers }
+}
+
+/** 明显的危险命令特征，弹窗里标红提醒（仍然由用户决定） */
+/** Authorization 这类头只显示前后几位，避免 token 裸露在屏幕上 */
+function maskHeaders(headers?: Record<string, string>): string {
+  if (!headers) return ''
+  const keys = Object.keys(headers)
+  if (keys.length === 0) return ''
+  return keys
+    .map((key) => {
+      const value = String(headers[key] ?? '')
+      if (!/auth|token|key|secret/i.test(key)) return `${key}: ${value}`
+      const kept = value.length > 12 ? `${value.slice(0, 7)}…${value.slice(-4)}` : '****'
+      return `${key}: ${kept}`
+    })
+    .join('，')
+}
+
+function looksRisky(command: string, args: string[]): boolean {
+  const line = `${command} ${args.join(' ')}`
+  return /curl[^|]*\|\s*(sh|bash)|wget[^|]*\|\s*(sh|bash)|powershell\s+-enc|rm\s+-rf|Remove-Item\s+-Recurse/i.test(line)
+}
+
+/**
+ * 添加 MCP 服务器弹窗。
+ *  - 从设置里点「添加服务器」：只改草稿，随设置一起保存
+ *  - 从 agent 提议：直接写配置并重连（afterAdd 回调）
+ */
+export function openMcpAddDialog(options: {
+  initialJson?: string
+  /** 直接落配置（agent 提议时用），不传就交给调用方处理草稿 */
+  commit?: (servers: ParsedMcpServer[]) => void
+} = {}): void {
+  const overlay = document.createElement('div')
+  overlay.className = 'overlay'
+  const modal = document.createElement('div')
+  modal.className = 'modal'
+  modal.style.width = 'min(600px, calc(100vw - 60px))'
+
+  const body = document.createElement('div')
+  body.className = 'body'
+  const label = document.createElement('div')
+  label.className = 'ask-label'
+  label.textContent = '粘贴 Claude Desktop 格式的 mcpServers JSON'
+  const area = document.createElement('textarea')
+  area.className = 'ask-area'
+  area.rows = 10
+  area.spellcheck = false
+  area.value =
+    options.initialJson ??
+    ['{', '  "basic-memory": {', '    "command": "uvx",', '    "args": ["--prerelease=allow", "basic-memory", "mcp"]', '  }', '}'].join(
+      String.fromCharCode(10)
+    )
+
+  const preview = document.createElement('div')
+  preview.className = 'mcp-preview'
+
+  const refresh = (): void => {
+    const result = parseMcpServers(area.value)
+    preview.textContent = ''
+    if (!result.ok) {
+      preview.textContent = `✗ ${result.error ?? '解析失败'}`
+      preview.classList.add('bad')
+      return
+    }
+    preview.classList.remove('bad')
+    for (const server of result.servers ?? []) {
+      const line = document.createElement('div')
+      line.className = 'mcp-preview-line'
+      const maskedHeaders = maskHeaders(server.headers)
+      line.textContent = server.url
+        ? `${server.name}：${server.transport === 'sse' ? 'SSE' : 'HTTP'} ${server.url}${maskedHeaders ? `（${maskedHeaders}）` : ''}`
+        : `${server.name}：${server.command ?? ''} ${(server.args ?? []).join(' ')}`
+      if (server.command && looksRisky(server.command, server.args ?? [])) {
+        const warn = document.createElement('span')
+        warn.className = 'mcp-warn'
+        warn.textContent = ' ⚠ 这条命令看起来有风险，确认来源可信'
+        line.appendChild(warn)
+      }
+      preview.appendChild(line)
+    }
+    const hint = document.createElement('div')
+    hint.className = 'mcp-preview-hint'
+    hint.textContent = '添加后会立即启用并连接'
+    preview.appendChild(hint)
+  }
+  area.addEventListener('input', refresh)
+  refresh()
+
+  body.append(label, area, preview)
+
+  const foot = document.createElement('div')
+  foot.className = 'foot'
+  const cancel = document.createElement('button')
+  cancel.className = 'btn'
+  cancel.textContent = '取消'
+  cancel.addEventListener('click', () => overlay.remove())
+  const ok = document.createElement('button')
+  ok.className = 'btn primary'
+  ok.textContent = '添加并连接'
+  ok.addEventListener('click', () => {
+    const result = parseMcpServers(area.value)
+    if (!result.ok || !result.servers) {
+      preview.textContent = `✗ ${result.error ?? '解析失败'}`
+      preview.classList.add('bad')
+      return
+    }
+    overlay.remove()
+    options.commit?.(result.servers)
+  })
+  foot.append(cancel, ok)
+
+  modal.append(body, foot)
+  overlay.appendChild(modal)
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) overlay.remove()
+  })
+  document.body.appendChild(overlay)
+  area.focus()
+}
+
+

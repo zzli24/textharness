@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { registerIpc } from './ipc'
+import { connectMcpServers } from './services/mcp'
 import { loadConfig } from './services/config'
 import { ensureDemoImage } from './services/demoImage'
 import { markCleanExit } from './services/editorState'
@@ -277,7 +278,16 @@ if (!hasLock) {
       dirtyCount = Number.isFinite(count) ? count : 0
     })
 
-    registerIpc({
+    // 启动就在后台连一次外部服务器，别等到用户点开设置才连
+  setTimeout(() => {
+    try {
+      void connectMcpServers(loadConfig().mcpServers)
+    } catch {
+      /* 连不上不影响启动 */
+    }
+  }, 1200)
+
+  registerIpc({
       takePendingFile: () => {
         const value = pendingOpenFile
         pendingOpenFile = null

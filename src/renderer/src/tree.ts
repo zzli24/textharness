@@ -1,4 +1,10 @@
 import type { TreeNode } from '@shared/types'
+import { fileIconEl } from './fileIcons'
+
+/** 图片文件默认显示在树里（点开是预览）；需要时可关掉 */
+export interface TreeOptions {
+  hideImages?: boolean
+}
 
 export interface TreeApi {
   refresh(): Promise<void>
@@ -101,10 +107,16 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
 
         const twisty = document.createElement('span')
         twisty.className = 'twisty'
-        twisty.textContent = node.isDir ? (collapsed.has(node.path) ? '▸' : '▾') : ''
+        const expanded = node.isDir && !collapsed.has(node.path)
+        if (node.isDir) {
+          // 悬停才出现的实心三角（平时让位给图标，避免每行都挤一个箭头）
+          twisty.innerHTML =
+            '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M5.5 3.5l6 4.5-6 4.5z"/></svg>'
+          if (expanded) twisty.classList.add('open')
+          twisty.title = expanded ? '收起' : '展开'
+        }
 
-        const icon = document.createElement('span')
-        icon.textContent = node.isDir ? '📁' : '📄'
+        const icon = fileIconEl(node.name, node.isDir, 14, expanded)
 
         const name = document.createElement('span')
         name.className = 'name'

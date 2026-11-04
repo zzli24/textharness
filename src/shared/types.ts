@@ -23,6 +23,20 @@ export interface AppConfig {
   tasks: TaskConfig[]
   /** 启动时补跑错过的任务 */
   catchUpOnLaunch: boolean
+  /** 并排编辑时右栏占比 0.2~0.8 */
+  splitRatio: number
+  /** 每个服务商各自的 Key / 模型，切服务商时自动跟着换 */
+  providerProfiles: Record<string, ProviderProfile>
+  /** 启用的工具名（空数组 = 用默认集合） */
+  enabledTools: string[]
+  /** 工具总数上限（含 MCP），默认 35 */
+  toolCap: number
+  /** 外部 MCP 服务器，默认空 = 未配置 */
+  mcpServers: McpServerConfig[]
+  /** 编辑器字号（Ctrl + 滚轮调整） */
+  editorFontSize: number
+  /** 记忆检索是否用本地向量模型（关掉就走 BM25） */
+  memorySemantic: boolean
   /** 启动后自动检查新版本 */
   autoCheckUpdate: boolean
   /** 自定义背景图：工作区内的相对路径，空字符串表示没选 */
@@ -85,7 +99,7 @@ export interface ApprovalRequest {
 }
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: MessageContent
   /** 思考模式下必须把上一轮的思考内容带回去，否则接口报 400 */
   reasoning_content?: string
 }
@@ -136,6 +150,8 @@ export interface StoredTool {
 export interface StoredMessage {
   role: 'user' | 'assistant'
   content: string
+  /** 图片以 th-img: 引用存在会话目录里，加载时还原成 data URL */
+  images?: string[]
   reasoning?: string
   tools?: StoredTool[]
 }
@@ -247,3 +263,84 @@ export type UpdateEvent =
   | { kind: 'downloaded'; version: string }
   | { kind: 'manual'; version: string; url: string }
   | { kind: 'error'; message: string }
+
+/** 外部 MCP 服务器（stdio）配置，字段与 Claude Desktop 的 mcpServers 兼容 */
+/** MCP 工具调用策略：默认写操作要确认 */
+export type McpToolPolicy = 'confirm-write' | 'confirm-all' | 'allow-all'
+
+export interface McpServerConfig {
+  name: string
+  /** stdio：要执行的命令；http/sse 留空 */
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  /** 远程服务器地址（streamable http 或 sse） */
+  url?: string
+  headers?: Record<string, string>
+  /** 不填：有 url 当 http，有 command 当 stdio */
+  transport?: 'stdio' | 'http' | 'sse'
+  enabled: boolean
+  /** 不填按 confirm-write 处理 */
+  policy?: McpToolPolicy
+}
+
+/** 设置页里展示的一个工具条目 */
+export interface ToolListItem {
+  name: string
+  label: string
+  group: 'text' | 'file' | 'app' | 'memory' | 'mcp'
+  summary: string
+  enabled: boolean
+  dangerous: boolean
+}
+
+/** 编辑器当前选区 */
+export interface SelectionInfo {
+  id: string
+  text: string
+  from: number
+  to: number
+  path: string | null
+}
+
+/** OpenAI 兼容的多模态内容片段 */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/** 聊天消息的 content：纯文本或多模态片段 */
+export type MessageContent = string | ContentPart[]
+
+/** 输入框里附带的图片（只存路径 + 缩略图，不把 base64 写进会话文件） */
+export interface ComposerAttachment {
+  id: string
+  name: string
+  path: string
+  /** 用于预览的 data URL（可能被降采样） */
+  preview: string
+}
+
+/** 单个服务商的凭据（key 是 baseURL，自定义中转站用 __custom__） */
+export interface ProviderProfile {
+  apiKey: string
+  model: string
+}
+
+/** 归档请求：知识库或记忆 */
+export interface ArchiveRequest {
+  target: 'knowledge' | 'memory'
+  category?: string
+  title: string
+  content: string
+  memoryKind?: 'fact' | 'log' | 'template'
+  onConflict?: 'append' | 'overwrite' | 'rename'
+  source?: string
+}
+
+/** 归档结果（undo 用于撤销） */
+export interface ArchiveResult {
+  ok: boolean
+  path: string
+  undo?: { path: string; action: 'delete' | 'restore'; previous?: string }
+  text: string
+}

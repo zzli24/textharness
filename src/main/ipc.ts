@@ -1,16 +1,34 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import type { AppConfig, ChatMessage, FileMeta } from '@shared/types'
 import { dayStamp, savePastedImage } from './services/assets'
 import { loadEditorState, saveEditorState, type SavedEditorState } from './services/editorState'
+import { registerServiceIpc } from './ipcServices'
 import { loadConfig, patchConfig } from './services/config'
+import { trace } from './services/logger'
+import { ensureMemoryDir, listMemoryFiles, readMemory, writeMemoryFile } from './services/memory'
+import {
+  appendToNote,
+  archiveUndo,
+  archiveWrite,
+  insertAfterHeading,
+  listHeadings,
+  listKnowledgeCategories,
+  listKnowledgeNotes,
+  type ArchiveRequest,
+} from './services/archive'
+import { createDraft, getDraft, loadDrafts, pendingCount, updateDraft } from './services/drafts'
+import { reorganizeForMerge, summarizeForArchive } from './services/summarize'
+import { connectMcpServers, disconnectMcpServer, mcpStatus, mcpToolDefs } from './services/mcp'
 import { runAgent, type AgentMessage } from './services/agent'
 import { listModels, modelInfo } from './services/llm'
 import { deleteSession, listSessions, loadSession, saveSession, type StoredSession } from './services/sessions'
 import { listFiles, replaceInFiles, searchInFiles } from './services/search'
-import type { SearchOptions } from '@shared/types'
+import { TOOL_DEFS } from './services/tools'
+import { TOOL_CAP_DEFAULT, TOOL_META, defaultEnabledTools } from './services/toolMeta'
+import type { SearchOptions, SelectionInfo, ToolListItem } from '@shared/types'
 import {
   assertInside,
   createEntry,
@@ -85,7 +103,75 @@ export interface UpdateBridge {
   updateFeed(): string
 }
 
+/** 设置页「工具能力」用：内置工具 + 当前开关状态 */
+function listTools(): ToolListItem[] {
+  const cfg = loadConfig()
+  const enabled = enabledToolSet(cfg)
+  return TOOL_DEFS.map((tool) => {
+    const meta = TOOL_META[tool.function.name]
+    return {
+      name: tool.function.name,
+      label: meta?.label ?? tool.function.name,
+      group: meta?.group ?? 'text',
+      summary: meta?.summary ?? tool.function.description.slice(0, 60),
+      enabled: enabled.has(tool.function.name),
+      dangerous: meta?.dangerous ?? false,
+    }
+  })
+}
+
+/** 当前生效的工具集合：配置里没写就用默认值 */
+export function enabledToolSet(cfg: { enabledTools?: string[]; toolCap?: number }): Set<string> {
+  const base = cfg.enabledTools && cfg.enabledTools.length > 0 ? cfg.enabledTools : defaultEnabledTools()
+  const cap = Math.min(Math.max(cfg.toolCap ?? TOOL_CAP_DEFAULT, 5), 60)
+  return new Set(base.slice(0, cap))
+}
+
+interface InAppConfirmSpec {
+  title: string
+  message: string
+  detail?: string
+  buttons: string[]
+  /** 蓝色按钮下标 */
+  primaryId?: number
+  /** 回车触发下标 */
+  defaultId?: number
+  /** Esc 触发下标 */
+  cancelId?: number
+}
+
+const pendingConfirms = new Map<string, (index: number) => void>()
+
+/**
+ * 应用内确认框：走渲染层自绘的 confirmDialog，样式跟主题一致，
+ * 不再弹 Windows 原生对话框（截图难看、按钮顺序不跟应用）。
+ * 窗口没了或超时就按「取消」处理。
+ */
+function askInApp(sender: Electron.WebContents, spec: InAppConfirmSpec): Promise<number> {
+  const id = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return new Promise((resolve) => {
+    const finish = (index: number): void => {
+      if (!pendingConfirms.has(id)) return
+      pendingConfirms.delete(id)
+      clearTimeout(timer)
+      resolve(index)
+    }
+    const timer = setTimeout(() => finish(spec.cancelId ?? 0), 5 * 60 * 1000)
+    pendingConfirms.set(id, finish)
+    if (sender.isDestroyed()) {
+      finish(spec.cancelId ?? 0)
+      return
+    }
+    sender.send('ui:confirm', { id, ...spec })
+  })
+}
+
 export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
+  ipcMain.on('ui:confirm:reply', (_event, payload: { id: string; index: number }) => {
+    pendingConfirms.get(payload.id)?.(Number(payload.index) || 0)
+  })
+  // 记忆 / MCP 的 handler 在 ipcServices.ts 里注册
+  registerServiceIpc()
   const checkUpdateNow = deps.checkUpdateNow ?? (async () => undefined)
   const quitAndInstallUpdate = deps.quitAndInstallUpdate ?? (() => undefined)
   const updateFeed = deps.updateFeed ?? (() => '')
@@ -255,6 +341,17 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
     return result.filePaths[0]
   })
 
+  // 多选图片（给 AI 面板做附件用，不做裁剪）
+  ipcMain.handle('fs:pickImages', async () => {
+    const win = deps.getWindow()
+    const options = {
+      properties: ['openFile', 'multiSelections'] as Array<'openFile' | 'multiSelections'>,
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+    }
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? [] : result.filePaths
+  })
+
   /** 把用户选的图片复制进工作区 .assets/bg/，配置里只存相对路径 */
   ipcMain.handle('fs:importImage', async (_e, sourcePath: string) => {
     const cfg = loadConfig()
@@ -418,8 +515,14 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   ipcMain.handle('ai:model', () => modelInfo(loadConfig()))
   ipcMain.handle('ai:models', () => listModels(loadConfig()))
 
-  ipcMain.handle('ai:chat', (event, payload: { id: string; messages: ChatMessage[] }) => {
+  ipcMain.handle('ai:chat', async (event, payload: { id: string; messages: ChatMessage[]; knowledgeMode?: boolean }) => {
     const cfg = loadConfig()
+    // 每次对话前确保 MCP 已连：否则「设置页还没打开过」时模型看不到外部工具
+    try {
+      await connectMcpServers(cfg.mcpServers)
+    } catch (err) {
+      trace(`MCP 连接失败（不影响本轮对话）: ${err instanceof Error ? err.message : String(err)}`)
+    }
     const controller = new AbortController()
     controllers.set(payload.id, controller)
     const sender = event.sender
@@ -429,13 +532,92 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
 
     void runAgent({
       cfg,
+      // 用户在设置里关掉的工具，模型就看不到
+      allowedTools: [...enabledToolSet(cfg)],
+      // 知识库开关：只有用户勾了才鼓励检索，避免每轮都去翻笔记
+      systemExtra: payload.knowledgeMode
+        ? [
+            '本轮用户勾选了「知识库」：回答前先用 search_files 在 知识库/ 里检索相关笔记，优先引用已有结论，引用格式写成 路径:行号。',
+            '知识库里没有相关内容时，明确说一句知识库里没有，再给通用答案，不要编造笔记内容。',
+          ].join(String.fromCharCode(10))
+        : [
+            '本轮用户没有勾选「知识库」：不要主动检索 知识库/，直接回答问题。',
+            '只有用户明确说查知识库、看看笔记、我以前记过吗，才检索。',
+          ].join(String.fromCharCode(10)),
       messages: payload.messages.filter((m) => m.role !== 'system') as AgentMessage[],
       signal: controller.signal,
       toolContext: {
         root: cfg.workspaceRoot,
         assetsDir: cfg.assetsDir,
+        userData: app.getPath('userData'),
+        memorySemantic: cfg.memorySemantic === true,
         openInEditor: (path: string) => send('file:open', path),
         requestAccess: (path: string, mode: 'read' | 'write') => requestAgentAccess(sender, path, mode),
+        appControl: (action: string, payload?: unknown) => requestAppControl(sender, action, payload),
+        confirmMcpCall: async (server: string, tool: string, args: unknown): Promise<boolean> => {
+          let preview = ''
+          try {
+            preview = JSON.stringify(args, null, 2).slice(0, 500)
+          } catch {
+            preview = String(args)
+          }
+          const choice = await askInApp(sender, {
+            title: '外部工具调用',
+            message: `MCP 服务器「${server}」要执行 ${tool.split('__')[1] ?? tool}`,
+            detail: `参数：\n${preview}`,
+            buttons: ['拒绝', '允许'],
+            // 蓝色给「允许」，但回车/Esc 仍是拒绝，避免误触
+            primaryId: 1,
+            defaultId: 0,
+            cancelId: 0,
+          })
+          return choice === 1
+        },
+        // 归档区写入门禁：默认拒；用户选「本轮都允许」后，本次会话不再问
+        archiveWrite: async (path: string, summary: string): Promise<'allow' | 'session' | 'deny'> => {
+          if (archiveGrant.get(sender.id)) return 'allow'
+          const choice = await askInApp(sender, {
+            title: '写入归档区',
+            message: 'agent 想往 知识库/记忆 里写文件',
+            detail: summary,
+            buttons: ['取消', '写入', '本轮都允许'],
+            primaryId: 1,
+            defaultId: 0,
+            cancelId: 0,
+          })
+          if (choice === 2) {
+            archiveGrant.set(sender.id, true)
+            return 'session'
+          }
+          return choice === 1 ? 'allow' : 'deny'
+        },
+        // 危险操作：用原生确认框，避免在渲染层再做一套弹窗
+        confirm: async (title: string, detail: string): Promise<boolean> => {
+          const win = BrowserWindow.fromWebContents(sender)
+          const options = {
+            type: 'warning' as const,
+            title,
+            message: title,
+            detail,
+            buttons: ['取消', '确定'],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          }
+          const result = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+          return result.response === 1
+        },
+        getSelection: async () => {
+          cachedSelection = await requestSelection(sender)
+          if (!cachedSelection) return null
+          return { text: cachedSelection.text, from: cachedSelection.from, to: cachedSelection.to, path: cachedSelection.path }
+        },
+        replaceSelection: async (text: string) => {
+          if (!cachedSelection) return false
+          const ok = await replaceSelection(sender, text, cachedSelection)
+          if (ok) cachedSelection = null
+          return ok
+        },
         approve: (request) =>
           new Promise<boolean>((resolve) => {
             const approvalId = `ap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
@@ -465,6 +647,8 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
       events: {
         onDelta: (kind, text) => send('ai:delta', { id: payload.id, kind, text }),
         onTool: (toolEvent) => send('ai:tool', { id: payload.id, ...toolEvent }),
+        onUsage: (usage) => send('ai:usage', { id: payload.id, ...usage }),
+        onRetry: (attempt, reason) => send('ai:retry', { id: payload.id, attempt, reason }),
       },
     })
       .then(({ steps }) => send('ai:done', { id: payload.id, steps }))
@@ -517,6 +701,120 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
     await shell.openExternal(url)
   })
 
+  /* ---------- 应用控制 RPC（agent 操作编辑器本身） ---------- */
+  const pendingApp = new Map<string, (value: { ok: boolean; data?: unknown; text: string }) => void>()
+
+  ipcMain.on('app:rpc:reply', (_e, payload: { id: string; ok: boolean; data?: unknown; text: string }) => {
+    const resolve = pendingApp.get(payload.id)
+    if (!resolve) return
+    pendingApp.delete(payload.id)
+    resolve(payload)
+  })
+
+  function requestAppControl(
+    sender: Electron.WebContents,
+    action: string,
+    payload: unknown,
+    timeoutMs = 6000
+  ): Promise<{ ok: boolean; data?: unknown; text: string }> {
+    return new Promise((resolve) => {
+      if (sender.isDestroyed()) {
+        resolve({ ok: false, text: '窗口已关闭，无法操作界面。' })
+        return
+      }
+      const id = `app_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+      const timer = setTimeout(() => {
+        pendingApp.delete(id)
+        resolve({ ok: false, text: '界面没有响应（超时）。' })
+      }, timeoutMs)
+      pendingApp.set(id, (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      sender.send('app:rpc', { id, action, payload })
+    })
+  }
+
+  // 仅开发期：用来验证应用控制链路
+  if (!app.isPackaged) {
+    ipcMain.handle('debug:app', (event, action: string, payload: unknown) =>
+      requestAppControl(event.sender, action, payload)
+    )
+  }
+
+  /* ---------- 编辑器选区桥 ---------- */
+  // 主进程的工具要拿选区/替换选区，但选区只在渲染层。用「请求-回复」走两趟 IPC。
+  const pendingSelection = new Map<string, (value: SelectionInfo | null) => void>()
+  const pendingReplace = new Map<string, (ok: boolean) => void>()
+  const lastSelection = new Map<number, SelectionInfo>()
+
+  ipcMain.on('editor:selection:reply', (_e, payload: SelectionInfo) => {
+    const resolve = pendingSelection.get(payload.id)
+    if (!resolve) return
+    pendingSelection.delete(payload.id)
+    resolve(payload.text ? payload : null)
+  })
+
+  ipcMain.on('editor:selection:replaced', (_e, payload: { id: string; ok: boolean }) => {
+    const resolve = pendingReplace.get(payload.id)
+    if (!resolve) return
+    pendingReplace.delete(payload.id)
+    resolve(Boolean(payload.ok))
+  })
+
+  const requestSelection = (sender: Electron.WebContents, timeoutMs = 4000): Promise<SelectionInfo | null> =>
+    new Promise((resolve) => {
+      if (sender.isDestroyed()) {
+        resolve(null)
+        return
+      }
+      const id = `sel_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+      const timer = setTimeout(() => {
+        pendingSelection.delete(id)
+        resolve(null)
+      }, timeoutMs)
+      pendingSelection.set(id, (value) => {
+        clearTimeout(timer)
+        if (value) lastSelection.set(sender.id, value)
+        resolve(value)
+      })
+      sender.send('editor:selection:request', { id })
+    })
+
+  const replaceSelection = (sender: Electron.WebContents, text: string, current: SelectionInfo): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (sender.isDestroyed()) {
+        resolve(false)
+        return
+      }
+      const id = `rep_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+      const timer = setTimeout(() => {
+        pendingReplace.delete(id)
+        resolve(false)
+      }, 4000)
+      pendingReplace.set(id, (ok) => {
+        clearTimeout(timer)
+        resolve(ok)
+      })
+      sender.send('editor:selection:replace', { id, text, from: current.from, to: current.to })
+    })
+
+  let cachedSelection: SelectionInfo | null = null
+
+  ipcMain.handle('tools:list', () => {
+    const base = listTools()
+    // 外部 MCP 工具也列出来，让用户知道现在挂了多少个
+    const external = mcpToolDefs().map((tool) => ({
+      name: tool.function.name,
+      label: tool.function.name,
+      group: 'mcp' as const,
+      summary: tool.function.description,
+      enabled: true,
+      dangerous: false,
+    }))
+    return [...base, ...external]
+  })
+
   /* ---------- 自动更新 ---------- */
   ipcMain.handle('update:check', () => checkUpdateNow())
   ipcMain.handle('update:install', () => quitAndInstallUpdate())
@@ -527,4 +825,243 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   ipcMain.handle('sessions:load', (_e, id: string) => loadSession(id))
   ipcMain.handle('sessions:save', (_e, session: StoredSession) => saveSession(session))
   ipcMain.handle('sessions:delete', (_e, id: string) => deleteSession(id))
+
+  /* 草稿任务队列：一次只跑一个总结，避免并发触发限流 */
+  const draftJobs: Array<() => Promise<void>> = []
+  let draftJobRunning = false
+  const runNextDraftJob = (): void => {
+    if (draftJobRunning) return
+    const job = draftJobs.shift()
+    if (!job) return
+    draftJobRunning = true
+    void job().finally(() => {
+      draftJobRunning = false
+      runNextDraftJob()
+    })
+  }
+  const enqueueDraftJob = (job: () => Promise<void>): void => {
+    draftJobs.push(job)
+    runNextDraftJob()
+  }
+
+  /** 本轮已允许写归档区的 webContents（新会话时清空） */
+  const archiveGrant = new Map<number, boolean>()
+
+  /* ---------- 归档 ---------- */
+  ipcMain.handle('archive:headings', (_e, relPath: string) => {
+    const cfg = loadConfig()
+    try {
+      const text = readFileSync(join(cfg.workspaceRoot, String(relPath)), 'utf8')
+      return { ok: true, headings: listHeadings(text) }
+    } catch (err) {
+      return { ok: false, headings: [], text: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('archive:append', (_e, relPath: string, section: string, afterLine?: number) => {
+    const cfg = loadConfig()
+    try {
+      if (typeof afterLine === 'number' && afterLine >= 0) {
+        const target = join(cfg.workspaceRoot, String(relPath))
+        const previous = readFileSync(target, 'utf8')
+        writeFileSync(target, insertAfterHeading(previous, afterLine, String(section)), 'utf8')
+        return { ok: true, path: relPath, text: `已插入到 ${relPath}`, undo: { path: target, action: 'restore' as const, previous } }
+      }
+      return appendToNote(cfg.workspaceRoot, String(relPath), String(section))
+    } catch (err) {
+      return { ok: false, path: relPath, text: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('archive:noteContent', (_e, relPath: string) => {
+    const cfg = loadConfig()
+    const target = join(cfg.workspaceRoot, String(relPath))
+    try {
+      return { ok: true, text: readFileSync(target, 'utf8') }
+    } catch (err) {
+      return { ok: false, text: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('archive:notes', () => {
+    const cfg = loadConfig()
+    return listKnowledgeNotes(cfg.workspaceRoot)
+  })
+  ipcMain.handle('archive:categories', () => {
+    const cfg = loadConfig()
+    return listKnowledgeCategories(cfg.workspaceRoot)
+  })
+  ipcMain.handle('archive:write', (_e, request: ArchiveRequest) => {
+    const cfg = loadConfig()
+    const granted = archiveGrant.get(_e.sender.id) === true
+    if (!granted) archiveGrant.set(_e.sender.id, true)
+    return archiveWrite(cfg.workspaceRoot, request)
+  })
+  ipcMain.handle('archive:undo', (_e, undo: { path: string; action: 'delete' | 'restore'; previous?: string }) => {
+    const cfg = loadConfig()
+    return archiveUndo(cfg.workspaceRoot, undo)
+  })
+  ipcMain.handle('archive:draftList', () => {
+    const cfg = loadConfig()
+    return { drafts: loadDrafts(app.getPath('userData')), pending: pendingCount(app.getPath('userData')), workspace: cfg.workspaceRoot }
+  })
+
+  ipcMain.handle(
+    'archive:draftCreate',
+    async (
+      _e,
+      input: {
+        title: string
+        content: string
+        target: 'knowledge' | 'memory'
+        category?: string
+        memoryKind?: 'fact' | 'log' | 'template'
+        source?: string
+        mergeInto?: string
+        summarize: boolean
+      }
+    ) => {
+      const userData = app.getPath('userData')
+      const cfg = loadConfig()
+      // 原样长度有限，避免草稿文件过大
+      const draft = createDraft(userData, {
+        title: input.title,
+        content: input.content,
+        target: input.target,
+        category: input.category,
+        memoryKind: input.memoryKind,
+        source: input.source ?? 'chat',
+        mergeInto: input.mergeInto,
+        mode: input.mergeInto ? (input.summarize ? 'rewrite' : 'append') : undefined,
+        status: input.summarize ? 'running' : 'pending',
+        summarized: !input.summarize,
+      })
+
+      if (input.summarize) {
+        enqueueDraftJob(async () => {
+          try {
+            if (input.mergeInto) {
+              // 合并 + 总结：让模型把新内容并进原文档并重组整篇
+              const existing = readFileSync(join(cfg.workspaceRoot, input.mergeInto), 'utf8')
+              const merged = await reorganizeForMerge(cfg, existing, input.content, input.title)
+              updateDraft(userData, draft.id, {
+                content: merged,
+                baseContent: existing,
+                mode: 'rewrite',
+                status: 'pending',
+                summarized: true,
+              })
+            } else {
+              const summary = await summarizeForArchive(cfg, input.content, input.title)
+              updateDraft(userData, draft.id, { content: summary, status: 'pending', summarized: true })
+            }
+          } catch (err) {
+            // 总结失败就保留原文，标成 failed 但仍可确认写入
+            updateDraft(userData, draft.id, {
+              status: 'pending',
+              summarized: false,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+          for (const win of BrowserWindow.getAllWindows()) {
+            win.webContents.send('archive:draftChanged', { pending: pendingCount(userData) })
+          }
+        })
+      }
+
+      // 立刻通知界面刷新 badge（总结完成后还会再通知一次）
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('archive:draftChanged', { pending: pendingCount(userData) })
+      }
+      return { draft, pending: pendingCount(userData) }
+    }
+  )
+
+  ipcMain.handle('archive:draftUpdate', (_e, id: string, patch: { title?: string; content?: string }) => {
+    const userData = app.getPath('userData')
+    const updated = updateDraft(userData, id, patch)
+    return { draft: updated, pending: pendingCount(userData) }
+  })
+
+  ipcMain.handle('archive:draftDiscard', (_e, id: string) => {
+    const userData = app.getPath('userData')
+    updateDraft(userData, id, { status: 'discarded' })
+    return { pending: pendingCount(userData) }
+  })
+
+  ipcMain.handle('archive:draftConfirm', (_e, id: string, force = false) => {
+    const userData = app.getPath('userData')
+    const cfg = loadConfig()
+    const draft = getDraft(userData, id)
+    if (!draft) return { ok: false, text: '草稿不存在' }
+    try {
+      if (draft.mergeInto && draft.mode === 'rewrite') {
+        const target = join(cfg.workspaceRoot, draft.mergeInto)
+        const previous = readFileSync(target, 'utf8')
+        // 草稿基于旧快照：目标文件期间被改过就提醒，避免覆盖别人的修改
+        if (!force && typeof draft.baseContent === 'string' && previous !== draft.baseContent) {
+          return {
+            ok: false,
+            stale: true,
+            text: '目标文档在草稿生成之后被修改过，直接覆盖会丢掉这些改动',
+          }
+        }
+        writeFileSync(target, `${draft.content.trim()}\n`, 'utf8')
+        updateDraft(userData, id, { status: 'written' })
+        return {
+          ok: true,
+          path: draft.mergeInto,
+          undo: { path: target, action: 'restore' as const, previous },
+          pending: pendingCount(userData),
+          text: `已按新结构覆盖 ${draft.mergeInto}`,
+        }
+      }
+      if (draft.mergeInto) {
+        const appended = appendToNote(cfg.workspaceRoot, draft.mergeInto, draft.content)
+        if (!appended.ok) return { ok: false, text: appended.text }
+        updateDraft(userData, id, { status: 'written' })
+        return {
+          ok: true,
+          path: appended.path,
+          undo: appended.undo,
+          pending: pendingCount(userData),
+          text: appended.text,
+        }
+      }
+      const result = archiveWrite(cfg.workspaceRoot, {
+        target: draft.target,
+        category: draft.category,
+        title: draft.title,
+        content: draft.content,
+        memoryKind: draft.memoryKind,
+        source: draft.source,
+      })
+      updateDraft(userData, id, { status: 'written' })
+      return { ok: true, path: result.path, undo: result.undo, pending: pendingCount(userData), text: result.text }
+    } catch (err) {
+      return { ok: false, text: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('archive:draftRegenerate', async (_e, id: string) => {
+    const userData = app.getPath('userData')
+    const cfg = loadConfig()
+    const draft = getDraft(userData, id)
+    if (!draft) return { ok: false }
+    updateDraft(userData, id, { status: 'running', error: undefined })
+    try {
+      const summary = await summarizeForArchive(cfg, draft.content, draft.title)
+      updateDraft(userData, id, { content: summary, status: 'pending', summarized: true })
+      return { ok: true, pending: pendingCount(userData) }
+    } catch (err) {
+      updateDraft(userData, id, {
+        status: 'pending',
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return { ok: false, text: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle('archive:resetGrant', () => {
+    archiveGrant.clear()
+    return { ok: true }
+  })
+
 }

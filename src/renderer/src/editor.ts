@@ -1,3 +1,4 @@
+import { bracketGuides, indentGuides, rainbowBrackets } from './editorGuides'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import {
   EditorView,
@@ -47,17 +48,24 @@ import {
   setSearchQuery,
 } from '@codemirror/search'
 import {
+  LanguageDescription,
   bracketMatching,
+  codeFolding,
   defaultHighlightStyle,
   foldGutter,
   foldKeymap,
   indentOnInput,
   syntaxHighlighting,
 } from '@codemirror/language'
-import { json } from '@codemirror/lang-json'
-import { markdown } from '@codemirror/lang-markdown'
-import { sql } from '@codemirror/lang-sql'
+import { json, jsonParseLinter } from '@codemirror/lang-json'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { MySQL, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { lintGutter, linter, openLintPanel, type LintSource } from '@codemirror/lint'
+import { javascript } from '@codemirror/lang-javascript'
+import { changeMarkers, withBaseline } from './editorDiff'
+
+export { withBaseline }
 
 /** 主题是全局的，用 Compartment 让所有文档的 state 都能被重配置 */
 const themeCompartment = new Compartment()
@@ -109,12 +117,34 @@ export function applyTheme(state: EditorState, dark: boolean): EditorState {
   return state.update({ effects: themeCompartment.reconfigure(themeExtension(dark)) }).state
 }
 
+/** JSON 解析错误默认是零长度区间（只有点没有下划线），补成 1 个字符宽 */
+const jsonDiagnostics: LintSource = (view) => {
+  const found = jsonParseLinter()(view)
+  const length = view.state.doc.length
+  return found.map((item) => (item.from === item.to ? { ...item, to: Math.min(length, item.from + 1) } : item))
+}
+
+/** Markdown 里 ``` 代码块能高亮的语言（只挂已装的语言包） */
+const markdownCodeLanguages = [
+  LanguageDescription.of({ name: 'json', alias: ['jsonc'], load: async () => json() }),
+  LanguageDescription.of({ name: 'sql', alias: ['mysql'], load: async () => sql({ dialect: MySQL }) }),
+  LanguageDescription.of({
+    name: 'javascript',
+    alias: ['js', 'ts', 'typescript'],
+    load: async () => javascript({ typescript: true, jsx: true }),
+  }),
+]
+
 function languageFor(path: string | null): Extension {
   if (!path) return []
   const ext = path.toLowerCase().split('.').pop() ?? ''
-  if (ext === 'sql' || ext === 'ddl') return sql()
-  if (ext === 'json' || ext === 'jsonc') return json()
-  if (ext === 'md' || ext === 'markdown') return markdown()
+  // SQL：按 MySQL 方言做关键字补全（大写）
+  if (ext === 'sql' || ext === 'ddl') return sql({ dialect: MySQL, upperCaseKeywords: true })
+  // JSON：语法错误直接用波浪线标出来，不用等保存
+  if (ext === 'json' || ext === 'jsonc') return [json(), linter(jsonDiagnostics, { delay: 350 })]
+  if (ext === 'md' || ext === 'markdown') {
+    return markdown({ base: markdownLanguage, codeLanguages: markdownCodeLanguages })
+  }
   return []
 }
 
@@ -128,7 +158,11 @@ function wrapsByDefault(path: string | null): boolean {
 /* ------------------------------------------------------------------ *
  * 粘贴图片 → 自动入库 → 插入 markdown 链接
  * ------------------------------------------------------------------ */
-function imagePaste(getDocPath: () => string | null): Extension {
+const pasteNotice = (message: string): void => {
+  document.dispatchEvent(new CustomEvent('th:toast', { detail: message, bubbles: true }))
+}
+
+function imagePaste(hooks: EditorHooks): Extension {
   return EditorView.domEventHandlers({
     paste(event, view) {
       const items = event.clipboardData?.items
@@ -139,13 +173,20 @@ function imagePaste(getDocPath: () => string | null): Extension {
       // 必须拦掉默认行为，否则会插入二进制垃圾
       event.preventDefault()
 
+      // 图片只能存进工作区的 .assets：工作区外的文档直接提示，不写盘
+      const docPath = hooks.getDocPath()
+      if (docPath && hooks.isInWorkspace && !hooks.isInWorkspace(docPath)) {
+        pasteNotice('这篇文档在工作区外，图片只能存进工作区的 .assets/。先用 Ctrl+S 另存到工作区，再粘贴图片。')
+        return true
+      }
+
       for (const item of images) {
         const file = item.getAsFile()
         if (!file) continue
         void file.arrayBuffer().then(async (buf) => {
           try {
             const rel = await window.th.assets.save({
-              docPath: getDocPath(),
+              docPath: hooks.getDocPath(),
               mime: file.type,
               bytes: new Uint8Array(buf),
             })
@@ -157,6 +198,12 @@ function imagePaste(getDocPath: () => string | null): Extension {
             })
           } catch (err) {
             console.error('[paste-image] failed', err)
+            const message = err instanceof Error ? err.message : String(err)
+            pasteNotice(
+              message.includes('越界') || message.includes('工作区')
+                ? '图片没存成：目标文档不在工作区，图片只能落到工作区的 .assets/。'
+                : `图片没存成：${message.slice(0, 120)}`
+            )
           }
         })
       }
@@ -413,6 +460,8 @@ export interface EditorHooks {
    * - 未命名文档：当日目录（粘贴图片时就是按这个前提算的相对路径），再退回工作区根
    */
   getBaseDirs(): string[]
+  /** 这篇文档是否在工作区内（决定能不能把图片存进 .assets） */
+  isInWorkspace?(path: string): boolean
   onUpdate(update: { docChanged: boolean; selectionSet: boolean; state: EditorState }): void
 }
 
@@ -430,11 +479,31 @@ export function createState(
       highlightSpecialChars(),
       history(),
       foldGutter(),
+      // 语法问题在行号旁标红点
+      lintGutter(),
+      // 折叠后显示 {…}，一眼知道藏了一片
+      codeFolding({ placeholderText: ' {…} ' }),
+      // 行号旁的改动标记（新增绿 / 修改琥珀）
+      changeMarkers(),
       drawSelection(),
       dropCursor(),
       EditorState.allowMultipleSelections.of(true),
+      // Ctrl + 滚轮缩放字号（普通滚轮仍然是滚动）
+      EditorView.domEventHandlers({
+        wheel: (event) => {
+          if (!event.ctrlKey && !event.metaKey) return false
+          event.preventDefault()
+          const delta = event.deltaY < 0 ? 1 : -1
+          document.dispatchEvent(new CustomEvent('th:zoom-editor', { detail: delta, bubbles: true }))
+          return true
+        },
+      }),
       indentOnInput(),
       bracketMatching(),
+      // 缩进参考线与彩虹括号：JSON/SQL 这种嵌套结构看得清层级
+      indentGuides(),
+      rainbowBrackets(),
+      bracketGuides(),
       closeBrackets(),
       autocompletion({
         activateOnTyping: true,
@@ -460,11 +529,13 @@ export function createState(
         { key: 'Shift-Alt-ArrowUp', run: copyLineUp },
         { key: 'Shift-Alt-ArrowDown', run: copyLineDown },
         { key: 'Mod-d', run: selectNextOccurrence },
+        // 打开/关闭「问题」面板（JSON 语法错误列表）
+        { key: 'Mod-Shift-m', run: openLintPanel },
         indentWithTab,
       ]),
       placeholder('在这里输入…（Ctrl+V 可直接粘贴截图，自动入库并插入图片链接）'),
       themeCompartment.of(themeExtension(dark)),
-      imagePaste(hooks.getDocPath),
+      imagePaste(hooks),
       imageHover(hooks.getBaseDirs),
       EditorView.updateListener.of((update) => {
         hooks.onUpdate({
