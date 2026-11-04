@@ -1,4 +1,4 @@
-// 为演示准备默认 userData 配置：工作区指向带内容的 agent-ws
+// 为演示准备默认 userData 配置：工作区默认 ~/Documents/agent-ws，可用 TH_WORKSPACE 覆盖
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -7,7 +7,7 @@ const ud = join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'T
 mkdirSync(ud, { recursive: true })
 
 const cfgPath = join(ud, 'config.json')
-const workspace = join(homedir(), 'Documents', '随写', 'agent-ws')
+const workspace = process.env.TH_WORKSPACE || join(homedir(), 'Documents', 'agent-ws')
 
 let current = {}
 if (existsSync(cfgPath)) {

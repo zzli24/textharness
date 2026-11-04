@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const VERSION = process.argv[2]
@@ -26,7 +27,7 @@ if (!VERSION) {
 
 const HOST = process.env.DEPLOY_HOST ?? 'root@47.109.100.9'
 const KEY = join(ROOT, process.env.DEPLOY_KEY ?? 'deploy/keys/deploy_ed25519')
-const TOKEN_FILE = process.env.GH_TOKEN_FILE ?? 'C:\\Users\\lizhongzheng\\Desktop\\github.txt'
+const TOKEN_FILE = process.env.GH_TOKEN_FILE ?? join(homedir(), 'Desktop', 'github.txt')
 const REPO = 'zzli24/textharness'
 const API = `https://api.github.com/repos/${REPO}`
 const TAG = `v${VERSION}`

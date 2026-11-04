@@ -68,7 +68,7 @@ npm run release -- 0.3.1 --no-site     # 不更新官网
 
 前置条件：
 
-- `C:\Users\lizhongzheng\Desktop\github.txt` 里放 GitHub PAT（细粒度：`Contents: Read and write`）
+- `GH_TOKEN_FILE`（默认 `~/Desktop/github.txt`）指向一个 GitHub PAT（细粒度：`Contents: Read and write`）
 - `deploy/keys/deploy_ed25519` 能免密登录 `root@47.109.100.9`
 - 都可用环境变量覆盖：`GH_TOKEN_FILE`、`DEPLOY_HOST`、`DEPLOY_KEY`
 
@@ -80,7 +80,7 @@ npm run release -- 0.3.1 --no-site     # 不更新官网
 ```powershell
 node scripts/selftest.mjs        # 编码往返 + 图片路径（23 项）
 node scripts/setup-test-workspace.mjs  # 造一个测试工作区
-node scripts/ui-agent-test.mjs   # 用 CDP 在真实界面里跑一次 agent（需先启动带 --remote-debugging-port 的应用）
+npm run test:agent               # agent 循环 / 工具调用单元测试
 ```
 
 ---
@@ -332,3 +332,13 @@ src/
 4. 语义检索改成「按需下载模型」：安装包不带 onnxruntime，设置里点一下再从镜像拉。
 
 已完成（原计划内）：agent 改文件的 diff 预览、写文件前的确认、编辑器缓冲区回写、大文件只读加载。
+---
+
+## 协议
+
+MIT，见 [LICENSE](LICENSE)。第三方依赖（Electron、CodeMirror 等）各自保留原协议。
+
+## 贡献
+
+- 提交前跑一遍：`npm run typecheck && npm run test:agent && npm run test:services && npm run test:session-images && node scripts/selftest.mjs`
+- 改动渲染层建议附一张截图或 30 秒录屏；涉及安全边界的改动（工作区越界、写盘确认）请在描述里写清影响面。

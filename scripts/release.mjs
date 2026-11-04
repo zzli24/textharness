@@ -9,7 +9,7 @@
 //   node scripts/release.mjs 0.3.1 --no-site      # 不更新官网
 //
 // 环境变量（可选）：
-//   GH_TOKEN_FILE   默认 C:\Users\lizhongzheng\Desktop\github.txt
+//   GH_TOKEN_FILE   GitHub PAT 文件，默认 ~/Desktop/github.txt
 //   DEPLOY_HOST     默认 root@47.109.100.9
 //   DEPLOY_KEY      默认 deploy/keys/deploy_ed25519
 
@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 import { createHash } from 'node:crypto'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -25,7 +26,7 @@ const version = args.find((a) => /^\d+\.\d+\.\d+$/.test(a))
 const skipBuild = args.includes('--skip-build')
 const noSite = args.includes('--no-site')
 
-const TOKEN_FILE = process.env.GH_TOKEN_FILE || 'C:\\Users\\lizhongzheng\\Desktop\\github.txt'
+const TOKEN_FILE = process.env.GH_TOKEN_FILE || join(homedir(), 'Desktop', 'github.txt')
 const HOST = process.env.DEPLOY_HOST || 'root@47.109.100.9'
 const KEY = join(ROOT, process.env.DEPLOY_KEY || 'deploy/keys/deploy_ed25519')
 

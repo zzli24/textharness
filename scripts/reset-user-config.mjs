@@ -6,7 +6,7 @@ const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')
 const ud = join(appData, 'textharness')
 mkdirSync(ud, { recursive: true })
 
-const workspace = join(homedir(), 'Documents', '随写', 'agent-ws')
+const workspace = process.env.TH_WORKSPACE || join(homedir(), 'Documents', 'agent-ws')
 
 const cfg = {
   workspaceRoot: workspace,
