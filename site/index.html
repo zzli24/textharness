@@ -572,7 +572,223 @@
           grid-template-columns: 1fr;
         }
       }
-    </style>
+    
+/* ---------- 精简版新增 ---------- */
+.points {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+  display: grid;
+  gap: 12px;
+  max-width: 780px;
+}
+
+.points li {
+  position: relative;
+  padding-left: 24px;
+  color: var(--dim);
+  font-size: 15.5px;
+  line-height: 1.75;
+}
+
+.points li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 11px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+.points li strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* 首屏卖点：header 整体居中，这里单独改回左对齐，不然列表看着歪 */
+header .points {
+  text-align: left;
+  max-width: 700px;
+  margin: 28px auto 0;
+}
+
+header .points li {
+  font-size: 15px;
+}
+
+header .points li::before {
+  top: 10px;
+}
+
+.callout {
+  margin-top: 28px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  max-width: 780px;
+}
+
+.callout h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: var(--fg);
+}
+
+.callout .points {
+  margin-top: 6px;
+  gap: 8px;
+}
+
+.callout .points li {
+  font-size: 14.5px;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.two-col .box {
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.two-col .box h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.two-col .box ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--dim);
+  font-size: 14.5px;
+  line-height: 1.8;
+}
+
+.section-note {
+  margin-top: 16px;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+/* ---------- 功能大类：折叠条（参考语雀的文档式排版） ---------- */
+.cap-list {
+  margin: 44px 0 0;
+  border-top: 1px solid var(--border);
+  max-width: 880px;
+}
+
+.cap-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.cap-item summary {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  padding: 24px 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.cap-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.cap-item summary:hover .cap-title {
+  color: var(--accent);
+}
+
+.cap-num {
+  flex: none;
+  width: 34px;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 13px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+}
+
+.cap-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cap-title {
+  display: block;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--fg);
+  transition: color 0.15s;
+}
+
+.cap-sub {
+  display: block;
+  margin-top: 5px;
+  font-size: 13.5px;
+  color: var(--dim);
+}
+
+.cap-item summary::after {
+  content: '';
+  flex: none;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-right: 1.5px solid var(--dim);
+  border-bottom: 1.5px solid var(--dim);
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+}
+
+.cap-item[open] summary::after {
+  transform: rotate(-135deg);
+}
+
+.cap-item[open] summary {
+  padding-bottom: 16px;
+}
+
+.cap-body {
+  padding: 0 6px 30px 56px;
+}
+
+.cap-body .points {
+  margin-top: 0;
+  max-width: 720px;
+}
+
+.cap-body .points li {
+  font-size: 15px;
+}
+
+.cap-body .shot {
+  margin-top: 24px;
+}
+
+.cap-body .shot img {
+  max-width: 760px;
+}
+
+/* agent 面板是竖图，限一下宽度，别占满整屏 */
+.cap-body .shot img[src*='agent.png'] {
+  max-width: 520px;
+}
+
+.cap-note {
+  margin-top: 14px;
+  font-size: 13.5px;
+  color: var(--dim);
+}
+</style>
   <body>
     <div class="aurora"></div>
     <div class="grid-overlay"></div>
@@ -584,10 +800,8 @@
           TextHarness
         </div>
         <div class="links">
-          <a href="#features">功能</a>
-          <a href="#table">表格</a>
-          <a href="#tools">工具</a>
-        <a href="#look">外观</a>
+          <a href="#capabilities">功能</a>
+          <a href="#fit">适合谁</a>
           <a href="#download">下载</a>
         </div>
       </nav>
@@ -605,7 +819,7 @@
         </p>
         <div class="cta">
           <a class="btn primary" href="#download">↓ 下载安装包</a>
-          <a class="btn ghost" href="#features">看看能做什么</a>
+          <a class="btn ghost" href="#capabilities">看看能做什么</a>
         </div>
         <div class="meta">
           <span>Windows 10/11 · macOS 11+</span>
@@ -616,234 +830,158 @@
 
       <div class="shots reveal">
         <figure class="shot-figure">
-          <img src="./assets/app-dark.png?v=4" alt="TextHarness 深色主题" />
-          <figcaption>深色主题</figcaption>
+          <img src="./assets/app-dark.png?v=7" alt="深色主题：左边编辑，右边 agent" />
+          <figcaption>深色主题 · 编辑器与 agent 同屏</figcaption>
         </figure>
         <figure class="shot-figure">
-          <img src="./assets/app-light.png?v=4" alt="TextHarness 浅色主题" />
+          <img src="./assets/app-light.png?v=7" alt="浅色主题：同样布局" />
           <figcaption>浅色主题</figcaption>
         </figure>
       </div>
 
-      <section id="features">
+      <section id="capabilities">
         <div class="eyebrow">Capabilities</div>
-        <h2>不是又一个记事本</h2>
-        <p class="section-lede">编辑器该有的它都有；不一样的是它自己会动手，还替你把表格和对比一起做了。</p>
+        <h2>功能按大类看</h2>
+        <p class="section-lede">点开任意一类，看它具体能做什么。</p>
 
-        <div class="cards">
-          <div class="card reveal">
-            <div class="ico">🤖</div>
-            <h3>能读写工作区的 agent</h3>
-            <p>列目录、读文件、正则搜索、写文件，最多 16 步自主完成。读大文件会分段返回并自己接着读，不会停在半截。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">📊</div>
-            <h3>CSV 表格视图</h3>
-            <p><code>.csv</code> / <code>.tsv</code> 双击就是表格：<kbd>Tab</kbd> 走格子、右键增删行列、<kbd>Ctrl+S</kbd> 原样存回 CSV。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🔀</div>
-            <h3>文本对比窗口</h3>
-            <p>行级 diff，左右自动对齐，增删改红绿高亮，顶部直接给「相同 / 新增 / 删除」统计。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🧾</div>
-            <h3>JSON 一键格式化</h3>
-            <p>状态栏点一下缩进成两空格，也能压成一行；格式有错时精确提示到第几行第几列。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🧮</div>
-            <h3>列选择 / 列粘贴</h3>
-            <p>点右下角「列」或按住 <kbd>Alt</kbd> 拖拽框选矩形区域，整列复制、按行分发粘贴。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🖼</div>
-            <h3>截图直接入库</h3>
-            <p><kbd>Ctrl+V</kbd> 粘贴截图，自动落到 <code>.assets/img/日期/</code>，光标处插入链接，悬停出缩略图。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🔤</div>
-            <h3>编码不乱码</h3>
-            <p>自动识别 UTF-8 / BOM / GBK / UTF-16，保存前做编码往返检测，宁可报警也不静默丢字。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">📂</div>
-            <h3>按日期归档</h3>
-            <p>新建文档 <kbd>Ctrl+S</kbd> 直接落进当天日期目录，同名自动加序号，不打断思路。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🧠</div>
-            <h3>跨会话记住你</h3>
-            <p>长期事实（"脚本一律 PowerShell"）每轮注入；会话结论只带最近几条；模板单独存放不占上下文。写进记忆要你点头。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🗂</div>
-            <h3>知识库归档要过审</h3>
-            <p>不管是你点归档还是 agent 自己提议，都会先变成草稿：可编辑、看整篇 diff、一键撤销。追加还能指定插到哪一节后面。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🔌</div>
-            <h3>外部工具接进来</h3>
-            <p>MCP 服务器（stdio / HTTP / SSE）接上后工具直接并入 agent；每台服务器单独设策略——写操作需确认、全部需确认、或全部允许。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">📈</div>
-            <h3>每轮花了多少 token</h3>
-            <p>prompt、补全、推理、缓存命中都摆出来；网关不报 usage 就按字符估算并标注，不含糊。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🛡</div>
-            <h3>断网、限流不慌</h3>
-            <p>429 和 5xx 自动退避重试，但「停止」始终能立刻打断；401 这类错误不重试，直接翻成人话告诉你哪儿错了。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🎨</div>
-            <h3>一眼分清是什么文件</h3>
-            <p>标签栏和文件树用同一套类型图标；未保存变红；图片点开是预览，能看尺寸体积、直接设为背景。</p>
-          </div>
+        <div class="cap-list">
+          <details class="cap-item" open>
+            <summary>
+              <span class="cap-num">01</span>
+              <span class="cap-main">
+                <span class="cap-title">编辑与文本</span>
+                <span class="cap-sub">编码、换行、大文件、列编辑、查找替换、结构辅助</span>
+              </span>
+            </summary>
+            <div class="cap-body">
+              <ul class="points">
+                <li><strong>编码不糊</strong>：自动识别 UTF-8 / BOM / GBK / UTF-16，保存前做往返检测，宁可报错也不静默丢字</li>
+                <li><strong>换行可控</strong>：CRLF / LF 识别、切换、原样还原</li>
+                <li><strong>大文件不炸</strong>：超过 8MB 先问，可只读打开前 3MB，保存强制另存，绝不截断原文件</li>
+                <li><strong>外部改动不丢</strong>：每 4 秒检测，被别的程序改了会问是否重载；崩溃后重启能还原未保存内容</li>
+                <li><strong>编辑手感</strong>：多标签、列选择列粘贴、正则查找替换、语法高亮、折叠、缩进参考线、彩虹括号、Ctrl + 滚轮缩放</li>
+                <li><strong>结构看得清</strong>：光标停在括号上会高亮配对并画出参考线；JSON 写错当场标红，Ctrl+Shift+M 看问题列表</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="cap-item">
+            <summary>
+              <span class="cap-num">02</span>
+              <span class="cap-main">
+                <span class="cap-title">表格与对比</span>
+                <span class="cap-sub">CSV 表格视图、行级 diff、JSON 格式化</span>
+              </span>
+            </summary>
+            <div class="cap-body">
+              <ul class="points">
+                <li><strong>.csv 双击就是表格</strong>：Tab 走格、右键增删行列、改完存回去还是 CSV，Excel 和脚本都能直接读</li>
+                <li><strong>并排 diff</strong>：行级对比，红绿高亮，顶部给「相同 / 新增 / 删除」统计</li>
+                <li><strong>JSON 一键格式化</strong>：缩进成两空格或压成一行，报错精确到行列</li>
+              </ul>
+              <div class="shot">
+                <img src="./assets/app-grid.png?v=7" alt="CSV 表格视图" />
+              </div>
+            </div>
+          </details>
+
+          <details class="cap-item">
+            <summary>
+              <span class="cap-num">03</span>
+              <span class="cap-main">
+                <span class="cap-title">agent 与工作区</span>
+                <span class="cap-sub">直接读写文件、22 个工具、随时可停</span>
+              </span>
+            </summary>
+            <div class="cap-body">
+              <ul class="points">
+                <li><strong>不是贴代码</strong>：列目录、读文件、正则搜索、改内容、新建文件，直接在工作区里动手；写完自动在编辑器打开</li>
+                <li><strong>改动可回退</strong>：写文件前有确认与 diff，改错了能撤销</li>
+                <li><strong>多步自主</strong>：最多 16 步连续调用工具，大文件会分段读并自己接着读</li>
+                <li><strong>随时叫停</strong>：停止按钮即时中断，重试退避中也能立刻停</li>
+                <li><strong>花钱看得见</strong>：每轮显示 token 用量（输入 / 输出 / 缓存命中）；限流与网络错误自动重试，鉴权错误直接报错</li>
+              </ul>
+              <div class="shot">
+                <img src="./assets/agent.png?v=7" alt="agent 面板：工具调用与回答" />
+              </div>
+            </div>
+          </details>
+
+          <details class="cap-item">
+            <summary>
+              <span class="cap-num">04</span>
+              <span class="cap-main">
+                <span class="cap-title">记忆与归档</span>
+                <span class="cap-sub">跨会话记住偏好，知识沉淀成草稿再入库</span>
+              </span>
+            </summary>
+            <div class="cap-body">
+              <ul class="points">
+                <li><strong>三档记忆</strong>：长期事实每轮注入、会话结论只带最近几条、长模板单独存放不占上下文</li>
+                <li><strong>归档草稿</strong>：选中内容 → 草稿队列 → 整篇 diff → 确认写入知识库，随时撤销</li>
+                <li><strong>追加与插入</strong>：可以追加到已有文档，也可以指定插到某个小节之后</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="cap-item">
+            <summary>
+              <span class="cap-num">05</span>
+              <span class="cap-main">
+                <span class="cap-title">外部工具（MCP）</span>
+                <span class="cap-sub">把别的服务接进来，逐台设策略</span>
+              </span>
+            </summary>
+            <div class="cap-body">
+              <ul class="points">
+                <li><strong>三种接入</strong>：本地进程（stdio）、HTTP、SSE 都支持；配置格式与 Claude Desktop 的 mcpServers 一致</li>
+                <li><strong>逐台策略</strong>：写操作需确认 / 全部需确认 / 全部允许</li>
+                <li><strong>也能让 agent 配</strong>：把 JSON 贴给它，它解析后弹出确认框，你点确认才写配置</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="cap-item">
+            <summary>
+              <span class="cap-num">06</span>
+              <span class="cap-main">
+                <span class="cap-title">安全边界</span>
+                <span class="cap-sub">哪些事它做不了，写清楚</span>
+              </span>
+            </summary>
+            <div class="cap-body">
+              <ul class="points">
+                <li>往 <strong>知识库 / 记忆</strong> 写东西，必须先确认，默认不写</li>
+                <li>执行脚本、调用外部工具、访问工作区外的文件，都要你点头</li>
+                <li>agent 只能「提议」修改配置，不能自己动配置文件</li>
+                <li>配置、会话、记忆全在你本机；除了模型请求本身，不上传任何内容</li>
+              </ul>
+            </div>
+          </details>
         </div>
       </section>
 
-      <section id="table">
-        <div class="eyebrow">Tables</div>
-        <h2>表格能直接改，不用绕去 Excel</h2>
-        <p class="section-lede">
-          表格不是"插进 Markdown 的图片"，而是真实的 CSV 文件。改完存回去还是 CSV，
-          Excel、数据库、脚本都能直接读。
-        </p>
+      <section id="fit">
+        <div class="eyebrow">Fit</div>
+        <h2>适合谁</h2>
+        <p class="section-lede">说清楚不做什么，比堆功能更有用。</p>
 
-        <div class="shot reveal">
-          <img src="./assets/app-grid.png?v=4" alt="CSV 表格视图界面" />
-        </div>
-
-        <div class="cards">
-          <div class="card reveal">
-            <div class="ico">➕</div>
-            <h3>建表</h3>
-            <p>状态栏「建表」问你要几行几列，直接开一个 <code>未命名-N.csv</code> 标签，行号列标都固定。</p>
+        <div class="two-col">
+          <div class="box reveal">
+            <h3>适合</h3>
+            <ul>
+              <li>每天开一堆 .md / .sql / .json，想让 AI 直接改文件</li>
+              <li>想要「记事本 + 会动手的助手」，而不是 IDE + 一堆插件</li>
+              <li>在意编码、换行、大文件这些底层细节</li>
+            </ul>
           </div>
-          <div class="card reveal">
-            <div class="ico">⌨️</div>
-            <h3>像 Excel 一样编辑</h3>
-            <p><kbd>Tab</kbd> 下一格、<kbd>Enter</kbd> 下一行、方向键上下走；从 Excel 复制一块区域，<kbd>Ctrl+V</kbd> 直接铺开。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🔄</div>
-            <h3>和 Markdown 互转</h3>
-            <p>笔记里选中表格 → 一键变 CSV 标签；表格右键「复制整表为 Markdown」→ 贴回文档。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">👀</div>
-            <h3>源码随时看</h3>
-            <p>表格上方一键切「源码」，看原始 CSV、改分隔符、确认转义，都不会破坏文件。</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="look">
-        <div class="eyebrow">Appearance</div>
-        <h2>背景图：5 套预设，或者把你自己的图裁进去</h2>
-        <p class="section-lede">
-          两种主题之外，还能给整窗铺一张底图。面板会自动变半透明，正文压一层薄雾，
-          背景再花文字也看得清。
-        </p>
-
-        <div class="shot reveal">
-          <img src="./assets/bg-settings.jpg?v=1" alt="背景图设置：无 / 深夜蓝 / 暮色紫 / 晨曦橙 / 森林青 / 石墨灰" />
-        </div>
-
-        <div class="cards">
-          <div class="card reveal">
-            <div class="ico">🌌</div>
-            <h3>5 套内置预设</h3>
-            <p>深夜蓝、暮色紫、晨曦橙、森林青、石墨灰——点一下就能换，缩略图直接看效果，不需要找图。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">✂️</div>
-            <h3>自定义图片可裁范围</h3>
-            <p>
-              选一张自己的图，会弹出 16:9 取景框：拖动平移、滚轮缩放，
-              <strong>框里看到什么，铺上去就是什么</strong>。确认后输出 1600×900 存进工作区
-              <code>.assets/bg/</code>，原图不动。
-            </p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🎚️</div>
-            <h3>三个滑杆调手感</h3>
-            <p>不透明度 5–90%、模糊 0–24px、暗化 0–85%。暗化会跟着主题走（深色压黑、浅色压白），用来保住文字对比度。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🧩</div>
-            <h3>图片跟着工作区走</h3>
-            <p>背景图不是"记在本机路径"里，而是复制进工作区，换电脑、备份、同步都不会丢图。</p>
-          </div>
-        </div>
-
-        <div class="shot reveal">
-          <img src="./assets/bg-crop.jpg?v=1" alt="选取背景范围：拖动平移、滚轮缩放、实时预览" />
-        </div>
-      </section>
-      <section id="tools">
-        <div class="eyebrow">Small things</div>
-        <h2>顺手的小工具，都长在右键里</h2>
-        <p class="section-lede">不占菜单位置，需要的时候就在鼠标底下。</p>
-
-        <div class="cards">
-          <div class="card reveal">
-            <div class="ico">🖱️</div>
-            <h3>右键文本处理</h3>
-            <p>大小写转换、首字母大写、升序 / 降序 / 按长度排序、删除重复行——整理 <code>IN (...)</code> 列表和日志时很省事。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🔍</div>
-            <h3>本文查找 / 文件夹搜索</h3>
-            <p>右键「在本文中查找」只搜当前文档；左上角放大镜搜整个工作区，支持正则与批量替换（自动备份到 <code>.history/</code>）。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🌗</div>
-            <h3>深浅主题</h3>
-            <p>编辑器、侧栏、AI 面板、对话框一起换色；滚动条平时隐形，鼠标移进去才浮现一条细线。</p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">⌨️</div>
-            <h3>常用快捷键</h3>
-            <p><kbd>Ctrl+B</kbd> 折叠文件栏 · <kbd>Ctrl+F</kbd> 本文查找 · <kbd>Ctrl+Shift+F</kbd> 工作区搜索 · <kbd>Ctrl+P</kbd> 快速打开 · <kbd>Ctrl+W</kbd> 关标签。</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="tech">
-        <div class="eyebrow">Under the hood</div>
-        <h2>基于 Chromium 内核</h2>
-        <p class="section-lede">
-          界面跑在 Electron 33（Chromium + Node）里，编辑器内核是 CodeMirror 6。
-          这决定了它的能力边界，也解释了安装包为什么是 77 MB 而不是 5 MB。
-        </p>
-
-        <div class="cards">
-          <div class="card reveal">
-            <div class="ico">🌐</div>
-            <h3>Chromium 渲染</h3>
-            <p>
-              界面由 Chromium 绘制，排版、字体、高分屏缩放、深浅主题和浏览器一致。
-              代价是安装包里约 180 MB 是 Chromium 运行时（未压缩），编辑器自身代码只有 2 MB。
-            </p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">⌨️</div>
-            <h3>CodeMirror 6</h3>
-            <p>
-              编辑器内核用 CodeMirror 6，列选择、查找替换、括号闭合、语法高亮
-              都来自它的官方扩展——这也是它能对齐 Notepad++ 关键操作的原因。
-            </p>
-          </div>
-          <div class="card reveal">
-            <div class="ico">🔒</div>
-            <h3>本地优先</h3>
-            <p>
-              文件只在你本机读写，不上传任何服务器。AI 面板只在你主动提问时把对话和它读到的文件内容发给模型，
-              API Key 存在本机配置文件里。
-            </p>
+          <div class="box reveal">
+            <h3>不适合</h3>
+            <ul>
+              <li>需要调试器、Git 图形化、重构的完整 IDE</li>
+              <li>需要团队协作、云端同步</li>
+              <li>想完全离线跑本地大模型（目前走 OpenAI 兼容接口）</li>
+            </ul>
           </div>
         </div>
       </section>
@@ -851,7 +989,7 @@
       <section id="download">
         <div class="eyebrow">Download</div>
         <h2>下载安装包</h2>
-        <p class="section-lede">两个平台都提供安装包：Windows 用 NSIS 向导（可选安装目录、自带卸载），macOS 按芯片选 dmg。</p>
+        <p class="section-lede">Windows 用向导安装（可选目录、自带卸载），macOS 按芯片选 dmg。</p>
 
         <div class="download-box">
           <div class="panel reveal">
@@ -877,116 +1015,39 @@
             </div>
 
             <details class="faq">
-              <summary>安装包为什么有 77 MB？</summary>
+              <summary>安装包为什么有 78 MB？</summary>
               <div class="faq-body">
-                体积几乎全部来自 Electron 运行时（Chromium + Node，未压缩约 180 MB），
-                编辑器自身的代码只有 2 MB。换来的是稳定的编辑器内核与渲染能力；
+                体积几乎全部来自 Electron 运行时（Chromium + Node）。换来的是稳定的编辑器内核与渲染能力；
                 已裁掉多余语言包并开启极限压缩。
               </div>
             </details>
-
-            <details class="faq">
-              <summary>表格是 CSV 还是编辑器里的"表格对象"？</summary>
-              <div class="faq-body">
-                是真实的 <code>.csv</code> / <code>.tsv</code> 文件。表格只是它的可视化视图，
-                改动会写回文本、保存时仍是标准 CSV，Excel 和脚本都能直接读。
-                这样它不会破坏纯文本编辑器的能力（行号、列选择、逐行 diff、百万行文件）。
-              </div>
-            </details>
-
-            <details class="faq">
-              <summary>必须联网才能用吗？</summary>
-              <div class="faq-body">
-                编辑、表格、对比、格式化全部离线可用。只有右侧 AI 面板需要你配置模型接口
-                （OpenAI 兼容的 Base URL + 模型名 + API Key），不配置也不影响其它功能。
-              </div>
-            </details>
-
-            <details class="faq">
-              <summary>提示「Windows 已保护你的电脑」怎么办？</summary>
-              <div class="faq-body">
-                <p style="margin: 0">
-                  这是 SmartScreen 对<strong>没有代码签名、也没有下载声誉</strong>的新程序的默认拦截，
-                  不代表文件有问题。三种绕过方式：
-                </p>
-                <ol>
-                  <li>点弹窗里的「更多信息」，再点右下角出现的「仍要运行」</li>
-                  <li>右键 exe → 属性 → 勾选底部的「解除锁定」→ 确定，再双击</li>
-                  <li>PowerShell 执行 <code>Unblock-File .\TextHarness-{{VERSION}}-setup.exe</code></li>
-                </ol>
-                <p style="margin: 8px 0 0">下载后建议核对哈希，确认文件没被篡改：</p>
-                <pre>Get-FileHash .\TextHarness-{{VERSION}}-setup.exe -Algorithm SHA256
-# 期望 {{EXE_SHA}}</pre>
-              </div>
-            </details>
           </div>
 
-          <div class="panel reveal" id="mac">
+          <div class="panel reveal">
             <div class="file-row">
               <div class="file-badge">🍎</div>
               <div>
-                <div class="file-name">TextHarness-{{VERSION}}-arm64.dmg / -x64.dmg</div>
-                <div class="file-sub">{{ARM_SIZE}} MB / {{X64_SIZE}} MB · macOS 11+ · Apple Silicon 用 arm64，Intel 用 x64</div>
+                <div class="file-name">TextHarness-{{VERSION}}-arm64.dmg</div>
+                <div class="file-sub">{{ARM_SIZE}} MB · Apple 芯片（M 系列）</div>
               </div>
             </div>
-
-            <div style="margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap">
-              <a class="btn primary" href="./downloads/TextHarness-{{VERSION}}-arm64.dmg" download>
-                ↓ Apple Silicon (M 系列)
-              </a>
-              <a class="btn ghost" href="./downloads/TextHarness-{{VERSION}}-x64.dmg" download>
-                ↓ Intel 芯片
-              </a>
+            <div style="margin-top: 18px">
+              <a class="btn ghost" href="./downloads/TextHarness-{{VERSION}}-arm64.dmg" download>下载 Apple 芯片版</a>
             </div>
 
-            <code class="hash">arm64 sha256 {{ARM_SHA}}
-x64   sha256 {{X64_SHA}}</code>
-
-            <div class="note">
-              没有 Apple 开发者证书（$99/年），所以未做公证。首次打开大概率提示
-              <strong>「已损坏，应移到废纸篓」</strong>——<em>文件没有坏</em>，是 Gatekeeper 对未签名应用的标准拦截。
-              按下面第一条处理即可。
+            <div class="file-row" style="margin-top: 22px">
+              <div class="file-badge">🍎</div>
+              <div>
+                <div class="file-name">TextHarness-{{VERSION}}-x64.dmg</div>
+                <div class="file-sub">Intel 芯片</div>
+              </div>
+            </div>
+            <div style="margin-top: 18px">
+              <a class="btn ghost" href="./downloads/TextHarness-{{VERSION}}-x64.dmg" download>下载 Intel 版</a>
             </div>
 
-            <details class="faq" open>
-              <summary>提示「已损坏，无法打开」怎么办？</summary>
-              <div class="faq-body">
-                <p style="margin: 0 0 8px">三种办法，任选其一：</p>
-                <ol style="margin: 0; padding-left: 20px">
-                  <li>
-                    安装后打开「终端」，执行：
-                    <pre style="margin: 6px 0">xattr -dr com.apple.quarantine /Applications/TextHarness.app
-open /Applications/TextHarness.app</pre>
-                  </li>
-                  <li>Finder 里右键 App →「打开」→ 弹窗里再点「打开」（有时需要点两次）</li>
-                  <li>系统设置 → 隐私与安全性 → 底部「仍要打开」</li>
-                </ol>
-                <p style="margin: 8px 0 0">
-                  校验包完整性（可选）：
-                  <code>shasum -a 256 ~/Downloads/TextHarness-{{VERSION}}-arm64.dmg</code>
-                </p>
-              </div>
-            </details>
-
-            <details class="faq">
-              <summary>该下 arm64 还是 x64？</summary>
-              <div class="faq-body">
-                左上角苹果菜单 →「关于本机」：写着 Apple M1/M2/M3/M4 的选 <strong>arm64</strong>；
-                写着 Intel Core i5/i7/i9 的选 <strong>x64</strong>。选错也能跑（Rosetta），只是慢一些。
-              </div>
-            </details>
-          </div>
-
-          <div class="panel reveal" id="start">
-            <h3 style="margin: 0 0 14px; font-size: 15px">三步开始用</h3>
-            <ol class="steps">
-              <li>双击 <code>TextHarness-{{VERSION}}-setup.exe</code>，选安装目录，下一步到底。</li>
-              <li>首次启动在「设置」里确认工作区目录（草稿、知识库、图库都放它下面）。</li>
-              <li>右侧 AI 面板首次打开会提示配置：填 Base URL、模型名、API Key（只有 Key 必填），存本机不外传。</li>
-            </ol>
-            <div style="margin-top: 22px; color: var(--dim); font-size: 12.5px; line-height: 1.8">
-              卸载：设置 →「应用」→ TextHarness → 卸载，或安装目录里的
-              <code>Uninstall TextHarness.exe</code>。卸载会保留你的配置和工作区文件。
+            <div class="note" style="margin-top: 20px">
+              macOS 首次打开如果提示「无法验证开发者」：右键 → 打开，或在系统设置里允许。
             </div>
           </div>
         </div>
@@ -994,7 +1055,7 @@ open /Applications/TextHarness.app</pre>
 
       <footer>
         <div>TextHarness v{{VERSION}} · 本地优先 · 数据不出机器</div>
-        <div>Built with Electron · CodeMirror 6</div>
+        <div>Chromium 内核 · TypeScript strict · 无遥测</div>
       </footer>
     </div>
 

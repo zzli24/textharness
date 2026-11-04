@@ -245,6 +245,8 @@ const api = {
     readText: () => ipcRenderer.invoke('app:readText') as Promise<string>,
     version: () => ipcRenderer.invoke('app:version') as Promise<string>,
     takePendingFile: () => ipcRenderer.invoke('app:takePendingFile') as Promise<string | null>,
+    capturePage: (target: string) =>
+      ipcRenderer.invoke('debug:capturePage', target) as Promise<{ ok: boolean; width: number; height: number }>,
     /** 从资源管理器拖进来的 File 取真实路径（Electron 32+ 起 File.path 已移除） */
     /** 仅开发期：直接触发一次授权申请，用来验证弹窗（打包后不存在） */
     ...(process.env['NODE_ENV'] !== 'development'

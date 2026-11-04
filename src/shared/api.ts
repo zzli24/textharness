@@ -205,6 +205,7 @@ export interface ThApi {
     readText(): Promise<string>
     version(): Promise<string>
     takePendingFile(): Promise<string | null>
+    capturePage(target: string): Promise<{ ok: boolean; width: number; height: number }>
     /** 拖入的 File 取绝对路径，取不到返回空串 */
     pathForFile(file: File): string
     /** 用系统浏览器打开外部链接（仅 http/https） */

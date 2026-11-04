@@ -177,6 +177,16 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   const updateFeed = deps.updateFeed ?? (() => '')
 
   /* ---------- 配置 ---------- */
+  // 仅开发期：把当前窗口截图写到指定路径，给官网截图用
+  ipcMain.handle('debug:capturePage', async (event, target: string) => {
+    if (app.isPackaged) throw new Error('仅开发期可用')
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('没有窗口')
+    const image = await win.capturePage()
+    writeFileSync(String(target), image.toPNG())
+    return { ok: true, width: image.getSize().width, height: image.getSize().height }
+  })
+
   ipcMain.handle('config:get', () => loadConfig())
 
   ipcMain.handle('config:patch', (_e, patch: Partial<AppConfig>) => patchConfig(patch))
