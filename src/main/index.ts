@@ -49,15 +49,15 @@ function fileFromArgv(argv: string[]): string | null {
   return null
 }
 
-/** 首次启动时命令行带进来的文件：先存起来，等渲染进程启动完主动来取 */
-let pendingOpenFile: string | null = null
+/** 首次启动时命令行带进来的文件：先存起来，等渲染进程启动完主动来取（可能不止一个） */
+const pendingOpenFiles: string[] = []
 
 /** 让渲染进程打开某个文件（再次双击 / 拖到图标上） */
 function openFileInRenderer(path: string | null): void {
   if (!path) return
   if (!mainWindow || mainWindow.webContents.isLoading()) {
-    // 窗口还没加载完：交给渲染进程启动时来取，避免事件丢失
-    pendingOpenFile = path
+    // 窗口还没加载完：先排队，等加载完再送进去，避免事件丢失
+    if (!pendingOpenFiles.includes(path)) pendingOpenFiles.push(path)
     return
   }
   mainWindow.webContents.send('file:open', path)
@@ -120,6 +120,14 @@ function createWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
+  // 加载期间排队的文件，等界面就绪后统一送进去
+  win.webContents.on('did-finish-load', () => {
+    while (pendingOpenFiles.length) {
+      const next = pendingOpenFiles.shift()
+      if (next) win.webContents.send('file:open', next)
+    }
+  })
+
   // 没有菜单栏时保留一个开 DevTools 的口子（F12 / Ctrl+Shift+I）
   win.webContents.on('before-input-event', (_event, input) => {
     if (input.type !== 'keyDown') return
@@ -176,26 +184,17 @@ const hasLock = USE_SINGLE_INSTANCE ? app.requestSingleInstanceLock() : true
 trace(`single instance lock: ${hasLock} (enabled=${USE_SINGLE_INSTANCE})`)
 
 if (!hasLock) {
-  trace('single-instance lock denied, asking user')
-  // 以前这里直接 app.quit()，用户看到的就是"双击没反应"。
-  // 现在给三个选择：唤起已有窗口 / 强制再开一个 / 退出。
-  void app.whenReady().then(async () => {
-    const result = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'TextHarness 已经有一个实例在运行',
-      message: '检测到另一个 TextHarness 进程（可能是后台残留，或者窗口被藏起来了）。',
-      detail:
-        '选「唤起已有窗口」会把那个实例叫到前台；如果它已经卡住没有任何反应，可以选「强制再开一个」。',
-      buttons: ['唤起已有窗口', '强制再开一个', '退出'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-    })
-
-    if (result.response === 1) {
+  // 已经有一个实例在跑：Windows 文件关联把文件路径塞进 argv，
+  // 那个实例会收到 second-instance 事件并打开文件，这边直接退出就行。
+  // 以前这里弹「唤起已有窗口 / 强制再开一个 / 退出」，双击文件先被这个框挡住，
+  // 现在只在显式传 --new-instance 时才另开一个进程。
+  const wantsNewInstance = process.argv.includes('--new-instance')
+  trace(`single-instance lock denied, exit (newInstance=${wantsNewInstance})`)
+  if (wantsNewInstance) {
+    void app.whenReady().then(async () => {
       try {
         const { spawn } = await import('node:child_process')
-        spawn(process.execPath, process.argv.slice(1), {
+        spawn(process.execPath, process.argv.slice(1).filter((arg) => arg !== '--new-instance'), {
           detached: true,
           stdio: 'ignore',
           env: { ...process.env, TH_NO_SINGLE_INSTANCE: '1' },
@@ -204,28 +203,43 @@ if (!hasLock) {
       } catch (err) {
         trace(`relaunch failed: ${String(err)}`)
       }
-    }
-    app.quit()
-  })
+      app.quit()
+    })
+  } else {
+    // 不能在 ready 之前 app.quit()：Electron 33 会直接 abort（退出码 0x80000003）
+    void app.whenReady().then(() => app.quit())
+  }
 } else {
   // macOS：Finder 里双击文件走的是 open-file 事件，不是命令行参数
   app.on('open-file', (event, path) => {
     event.preventDefault()
     if (app.isReady() && mainWindow) {
-      mainWindow.webContents.send('file:open', path)
+      if (mainWindow.webContents.isLoading()) {
+        if (!pendingOpenFiles.includes(path)) pendingOpenFiles.push(path)
+      } else {
+        mainWindow.webContents.send('file:open', path)
+      }
       if (mainWindow.isMinimized()) mainWindow.restore()
+      if (!mainWindow.isVisible()) mainWindow.show()
       mainWindow.focus()
     } else {
-      pendingOpenFile = path
+      if (!pendingOpenFiles.includes(path)) pendingOpenFiles.push(path)
     }
   })
 
   app.on('second-instance', (_event, argv) => {
-    if (!mainWindow) return
+    const target = fileFromArgv(argv)
+    trace(`second-instance argv=${JSON.stringify(argv)} file=${target ?? '(none)'}`)
+    if (!mainWindow) {
+      // 窗口还没建好：先把文件排队，createWindow 的 did-finish-load 会送进去
+      if (target && !pendingOpenFiles.includes(target)) pendingOpenFiles.push(target)
+      return
+    }
     if (mainWindow.isMinimized()) mainWindow.restore()
+    if (!mainWindow.isVisible()) mainWindow.show()
     mainWindow.focus()
-    // 已经开着一个实例时，双击关联文件会走到这里
-    openFileInRenderer(fileFromArgv(argv))
+    // 已经开着一个实例时，双击关联文件会走到这里：把文件送进现有窗口，不弹任何框
+    openFileInRenderer(target)
   })
 
   app.whenReady().then(() => {
@@ -288,11 +302,7 @@ if (!hasLock) {
   }, 1200)
 
   registerIpc({
-      takePendingFile: () => {
-        const value = pendingOpenFile
-        pendingOpenFile = null
-        return value
-      },
+      takePendingFile: () => pendingOpenFiles.shift() ?? null,
       getWindow: () => mainWindow,
       getScheduler: () => scheduler,
       checkUpdateNow,
