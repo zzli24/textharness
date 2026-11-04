@@ -646,6 +646,11 @@ header .points li::before {
   font-size: 14.5px;
 }
 
+/* FIT 区块去掉说明句后的间距 */
+#fit .two-col {
+  margin-top: 30px;
+}
+
 .two-col {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -964,8 +969,6 @@ header .points li::before {
       <section id="fit">
         <div class="eyebrow">Fit</div>
         <h2>适合谁</h2>
-        <p class="section-lede">说清楚不做什么，比堆功能更有用。</p>
-
         <div class="two-col">
           <div class="box reveal">
             <h3>适合</h3>
@@ -980,7 +983,6 @@ header .points li::before {
             <ul>
               <li>需要调试器、Git 图形化、重构的完整 IDE</li>
               <li>需要团队协作、云端同步</li>
-              <li>想完全离线跑本地大模型（目前走 OpenAI 兼容接口）</li>
             </ul>
           </div>
         </div>
