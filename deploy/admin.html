@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>TextHarness · 访问统计</title>
+<style>
+  :root {
+    --bg: #08090c;
+    --panel: rgba(20, 23, 31, 0.72);
+    --border: rgba(255, 255, 255, 0.08);
+    --fg: #e8ecf3;
+    --dim: #8b93a3;
+    --accent: #5b8cff;
+    --accent-2: #a06bff;
+    --green: #38d39f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px clamp(16px, 4vw, 56px) 60px;
+    background:
+      radial-gradient(900px 420px at 12% -10%, rgba(91, 140, 255, 0.16), transparent 60%),
+      radial-gradient(700px 380px at 92% -12%, rgba(160, 107, 255, 0.14), transparent 60%),
+      var(--bg);
+    color: var(--fg);
+    font: 14px/1.6 -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    min-height: 100vh;
+  }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: 0.2px; }
+  .sub { color: var(--dim); font-size: 12.5px; }
+  .sub b { color: var(--green); font-weight: 600; }
+  button {
+    margin-left: auto;
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--fg);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 22px 0 26px; }
+  .kpi { padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+  .kpi .label { color: var(--dim); font-size: 12px; }
+  .kpi .value { font-size: 26px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .kpi .note { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+
+  .grid2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+  .grid2 + .grid2 { margin-top: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .panel { border: 1px solid var(--border); border-radius: 14px; background: var(--panel); padding: 16px 18px; }
+  .panel h2 { font-size: 14px; margin: 0 0 14px; color: var(--dim); font-weight: 600; letter-spacing: 0.3px; }
+  .panel h2 .hint { color: rgba(139, 147, 163, 0.65); font-weight: 400; margin-left: 8px; font-size: 11.5px; }
+
+  /* 柱状图 */
+  .chart { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 6px; }
+  .bar-wrap { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; height: 100%; }
+  .bar {
+    width: 100%;
+    max-width: 34px;
+    border-radius: 4px 4px 2px 2px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+    min-height: 2px;
+    position: relative;
+    transition: height 0.2s;
+  }
+  .bar:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #11141b;
+    color: var(--fg);
+    font-size: 11.5px;
+    z-index: 2;
+  }
+  .bar-label { font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+  .legend { display: flex; gap: 14px; color: var(--dim); font-size: 11.5px; margin-top: 10px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); vertical-align: 1px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.mono, .mono { white-space: nowrap; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; color: var(--dim); }
+  .empty { color: var(--dim); font-size: 13px; padding: 10px 0; }
+  .err { color: #ff7b72; }
+  .scroll { max-height: 330px; overflow: auto; }
+  .scroll::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 5px; font-size: 11px; border: 1px solid var(--border); color: var(--dim); }
+  .tag.wx { color: var(--green); border-color: rgba(56, 211, 159, 0.35); }
+  .tag.bot { color: #d29922; border-color: rgba(210, 153, 34, 0.35); }
+  footer { margin-top: 26px; color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>TextHarness · 访问统计</h1>
+    <span class="sub">数据来自 nginx 访问日志 · 更新于 <b id="ts">—</b></span>
+    <button id="refresh">刷新</button>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi"><div class="label">今日访问量</div><div class="value" id="k-views">—</div><div class="note">页面请求，不含机器人与后台</div></div>
+    <div class="kpi"><div class="label">今日访客</div><div class="value" id="k-visitors">—</div><div class="note">按 IP 去重</div></div>
+    <div class="kpi"><div class="label">今日下载</div><div class="value" id="k-downloads">—</div><div class="note">exe / dmg</div></div>
+    <div class="kpi"><div class="label">近 14 天累计</div><div class="value" id="k-total">—</div><div class="note">访问 / 独立访客 / 下载</div></div>
+  </section>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>近 14 天访问趋势</h2>
+      <div class="chart" id="chart"></div>
+      <div class="legend"><span><i class="dot"></i>访问量</span><span>柱高按最大值等比缩放，悬停看当天明细</span></div>
+      <div id="chart-empty" class="empty" hidden>还没有数据（日志为空或被过滤）</div>
+    </div>
+
+    <div class="panel">
+      <h2>下载按文件汇总 <span class="hint">历史所有版本</span></h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>文件</th><th style="text-align:right">次数</th><th>最近</th></tr></thead>
+          <tbody id="downloads"></tbody>
+        </table>
+      </div>
+      <div id="dl-empty" class="empty" hidden>还没有下载记录</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>最近下载记录 <span class="hint" id="recent-dl-hint"></span></h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>时间</th><th>文件</th><th>IP</th><th>来源</th></tr></thead>
+          <tbody id="recent-dl"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>最近访问记录 <span class="hint" id="recent-visit-hint"></span></h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>时间</th><th>IP</th><th>页面</th><th>来源</th></tr></thead>
+          <tbody id="recent-visit"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>请求最多的路径 <span class="hint">含图片等资源</span></h2>
+      <table><thead><tr><th>路径</th><th style="text-align:right">次数</th></tr></thead><tbody id="paths"></tbody></table>
+    </div>
+    <div class="panel">
+      <h2>设备 / 来源</h2>
+      <table><thead><tr><th>类型</th><th style="text-align:right">请求</th></tr></thead><tbody id="uas"></tbody></table>
+      <div style="height:12px"></div>
+      <h2 style="margin-top:4px">来源页面</h2>
+      <table><thead><tr><th>Referer</th><th style="text-align:right">次数</th></tr></thead><tbody id="refs"></tbody></table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <h2>访问 IP（前 20）</h2>
+    <table><thead><tr><th>IP</th><th style="text-align:right">次数</th><th>最近访问</th></tr></thead><tbody id="ips"></tbody></table>
+  </div>
+
+  <footer id="foot">—</footer>
+
+<script>
+const $ = (id) => document.getElementById(id)
+
+function esc(text) {
+  return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+}
+
+function kindTag(kind) {
+  if (kind === '微信') return '<span class="tag wx">微信</span>'
+  if (kind === 'bot') return '<span class="tag bot">bot</span>'
+  if (kind === '手机浏览器') return '<span class="tag">手机</span>'
+  return '<span class="tag">桌面</span>'
+}
+
+function shortFile(name) {
+  return name.replace(/^TextHarness-/, '').replace(/\.(exe|dmg)$/, '')
+}
+
+async function load() {
+  try {
+    const res = await fetch('./stats.json?t=' + Date.now(), { cache: 'no-store' })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    render(await res.json())
+  } catch (err) {
+    $('foot').innerHTML = '<span class="err">读取 stats.json 失败：' + esc(err.message) + '</span>（确认 cron.d 已装、脚本已跑过）'
+  }
+}
+
+function render(data) {
+  $('ts').textContent = data.generatedAt
+  const t = data.today || { views: 0, visitors: 0, downloads: 0 }
+  $('k-views').textContent = t.views
+  $('k-visitors').textContent = t.visitors
+  $('k-downloads').textContent = t.downloads
+  $('k-total').textContent = data.totals.views + ' / ' + data.totals.visitors + ' / ' + data.totals.downloads
+
+  // 趋势图
+  const days = data.days || []
+  const max = Math.max(1, ...days.map((d) => d.views))
+  $('chart').innerHTML = days
+    .map((d) => {
+      const h = Math.round((d.views / max) * 120)
+      return '<div class="bar-wrap">' +
+        '<div class="bar" style="height:' + h + 'px" data-tip="' + d.date + '：访问 ' + d.views + ' · 访客 ' + d.visitors + ' · 下载 ' + d.downloads + '"></div>' +
+        '<div class="bar-label">' + d.date.slice(5) + '</div></div>'
+    })
+    .join('')
+  $('chart-empty').hidden = days.some((d) => d.views > 0)
+
+  // 按文件汇总
+  const downloads = data.downloads || []
+  $('dl-empty').hidden = downloads.length > 0
+  $('downloads').innerHTML = downloads
+    .map((d) => '<tr><td class="mono">' + esc(shortFile(d.file)) + '</td><td class="num">' + d.count + '</td><td class="mono">' + esc(d.last) + '</td></tr>')
+    .join('')
+
+  // 最近下载
+  const recentDl = data.recentDownloads || []
+  $('recent-dl-hint').textContent = recentDl.length ? '最近 ' + recentDl.length + ' 条' : ''
+  $('recent-dl').innerHTML = recentDl
+    .map((r) => '<tr><td class="mono">' + esc(r.time.slice(5)) + '</td><td class="mono">' + esc(shortFile(r.file)) + '</td><td class="mono">' + esc(r.ip) + '</td><td>' + kindTag(r.kind) + '</td></tr>')
+    .join('') || '<tr><td colspan="4" class="empty">还没有下载</td></tr>'
+
+  // 最近访问
+  const recentVisits = data.recentVisits || []
+  $('recent-visit-hint').textContent = recentVisits.length ? '最近 ' + recentVisits.length + ' 条（不含机器人）' : ''
+  $('recent-visit').innerHTML = recentVisits
+    .map((r) => '<tr><td class="mono">' + esc(r.time.slice(5)) + '</td><td class="mono">' + esc(r.ip) + '</td><td class="mono">' + esc(r.path) + '</td><td>' + kindTag(r.kind) + '</td></tr>')
+    .join('') || '<tr><td colspan="4" class="empty">还没有访问</td></tr>'
+
+  $('paths').innerHTML = (data.topPaths || [])
+    .map((p) => '<tr><td class="mono">' + esc(p[0]) + '</td><td class="num">' + p[1] + '</td></tr>')
+    .join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>'
+
+  $('uas').innerHTML = (data.uaKinds || [])
+    .map((u) => '<tr><td>' + esc(u[0]) + '</td><td class="num">' + u[1] + '</td></tr>')
+    .join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>'
+
+  $('refs').innerHTML = (data.topReferers || [])
+    .map((r) => '<tr><td class="mono">' + esc(r[0].slice(0, 60)) + '</td><td class="num">' + r[1] + '</td></tr>')
+    .join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>'
+
+  $('ips').innerHTML = (data.topIps || [])
+    .map((i) => '<tr><td class="mono">' + esc(i.ip) + '</td><td class="num">' + i.count + '</td><td class="mono">' + esc(i.last) + '</td></tr>')
+    .join('') || '<tr><td colspan="3" class="empty">暂无</td></tr>'
+
+  $('foot').textContent = '统计口径：状态码 2xx/3xx 的页面请求；下载按 /downloads/TextHarness-*.exe|dmg 计次；机器人（bot/curl/wget 等）不计入访问量，但仍出现在设备类型里。数据每 5 分钟刷新一次。'
+}
+
+$('refresh').addEventListener('click', load)
+load()
+setInterval(load, 60000)
+</script>
+</body>
+</html>
