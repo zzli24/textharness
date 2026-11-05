@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { registerIpc } from './ipc'
+import { setParamCacheFile } from './services/modelParams'
 import { connectMcpServers } from './services/mcp'
 import { loadConfig } from './services/config'
 import { ensureDemoImage } from './services/demoImage'
@@ -250,6 +251,12 @@ if (!hasLock) {
     if (process.platform !== 'darwin') {
       Menu.setApplicationMenu(null)
       trace('application menu removed')
+    }
+    // 模型参数学习结果落盘：重开应用后不用再撞一次 400
+    try {
+      setParamCacheFile(join(app.getPath('userData'), 'model-params.json'))
+    } catch {
+      /* 失败不影响启动 */
     }
     handleAssetProtocol()
     trace('asset protocol handled')

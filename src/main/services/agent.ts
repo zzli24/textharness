@@ -3,7 +3,7 @@ import { resolveModel } from './llm'
 import { TOOL_DEFS, buildSystemPrompt, runTool, type ToolContext } from './tools'
 import { callMcpTool, isMcpTool, mcpNeedsConfirm, mcpToolDefs } from './mcp'
 import { explainHttpError, fetchWithRetry } from './http'
-import { noteParamError, paramsFor, tokenParams } from './modelParams'
+import { noteParamError, reasoningEffortFor, tokenParams } from './modelParams'
 import { trace } from './logger'
 import type { MessageContent } from '@shared/types'
 
@@ -81,10 +81,11 @@ async function streamRound(
   let res: Response | null = null
   let lastError: unknown = null
 
-  // o 系列 / gpt-5 这类模型不认 max_tokens，也拒绝自定义 temperature：
-  // 第一次按猜测发，报错后按报文纠正再发一次（结论会记在内存里）
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const params = paramsFor(model.model)
+  // 不同模型对 max_tokens / temperature / reasoning_effort 的接受度不一样，
+  // 一次请求可能连续踩多个坑（比如先报 reasoning_effort，再报 temperature）：
+  // 每次报错就按报文纠正一处，最多试 5 次，学到的结论记在内存里。
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const effort = reasoningEffortFor(model.model, model.reasoning)
     const body = JSON.stringify({
       model: model.model,
       messages,
@@ -94,11 +95,10 @@ async function streamRound(
       ...tokenParams(model.model, 4096),
       // 让服务端在流的最后一个 chunk 里带上 usage（DeepSeek/OpenAI 兼容）
       stream_options: { include_usage: true },
-      // 只有用户显式选了推理等级才带这个字段：
-      // 部分中转/厂商不支持时会因为未知参数直接 400（带工具时尤其常见）
-      ...(params.reasoning && model.reasoning && model.reasoning !== 'auto'
-        ? { reasoning_effort: model.reasoning }
-        : {}),
+      // 1) 用户显式选了等级才带；
+      // 2) 学到的 "none" 是强制的（gpt-6-sol 带工具时必须显式 none）；
+      // 3) 学到的不支持就不发
+      ...(effort ? { reasoning_effort: effort } : {}),
     })
 
     try {
@@ -123,8 +123,8 @@ async function streamRound(
     } catch (err) {
       lastError = err
       const message = err instanceof Error ? err.message : String(err)
-      if (attempt === 0 && noteParamError(model.model, message)) {
-        trace(`模型参数不兼容，换字段重试：${message.slice(0, 140)}`)
+      if (noteParamError(model.model, message)) {
+        trace(`模型参数不兼容（第 ${attempt + 1} 次），纠正后重试：${message.slice(0, 160)}`)
         continue
       }
       throw new Error(explainHttpError(err))

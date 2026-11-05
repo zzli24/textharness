@@ -1,7 +1,7 @@
 import type { AppConfig } from '@shared/types'
 import { resolveModel } from './llm'
 import { fetchWithRetry } from './http'
-import { noteParamError, tokenParams } from './modelParams'
+import { noteParamError, reasoningEffortFor, tokenParams } from './modelParams'
 
 /**
  * 归档前的「总结」：把一段对话/选区压成可直接进知识库的 markdown 章节。
@@ -36,7 +36,7 @@ async function chatOnce(
 ): Promise<string> {
   let lastError: unknown = null
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     const body = JSON.stringify({
       model: model.model,
       messages: [
@@ -44,6 +44,7 @@ async function chatOnce(
         { role: 'user', content: user },
       ],
       ...tokenParams(model.model, maxTokens),
+      ...(reasoningEffortFor(model.model, undefined) === 'none' ? { reasoning_effort: 'none' } : {}),
       stream: false,
     })
 
@@ -65,7 +66,7 @@ async function chatOnce(
     } catch (err) {
       lastError = err
       const message = err instanceof Error ? err.message : String(err)
-      if (attempt === 0 && noteParamError(model.model, message)) continue
+      if (noteParamError(model.model, message)) continue
       throw new Error(`${label}失败：${message.slice(0, 300)}`)
     }
   }

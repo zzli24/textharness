@@ -4,7 +4,7 @@
  * 运行：node scripts/test-modelparams.mjs
  */
 import { build } from 'esbuild'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 
@@ -23,7 +23,7 @@ await build({
 })
 
 const requireCjs = createRequire(import.meta.url)
-const { paramsFor, tokenParams, noteParamError, resetParamOverrides } = requireCjs(outfile)
+const { paramsFor, tokenParams, noteParamError, reasoningEffortFor, resetParamOverrides, setParamCacheFile } = requireCjs(outfile)
 
 let passed = 0
 const failures = []
@@ -50,6 +50,8 @@ check('gpt-4.1 走新字段', paramsFor('gpt-4.1').tokenField === 'max_completio
 check('deepseek-chat 用 max_tokens', paramsFor('deepseek-chat').tokenField === 'max_tokens')
 check('deepseek-chat 允许 temperature', paramsFor('deepseek-chat').temperature === true)
 check('未知模型默认 max_tokens', paramsFor('some-relay-model').tokenField === 'max_tokens')
+check('gpt-6-sol 初判就带 none', paramsFor('gpt-6-sol').reasoningEffort === 'none')
+check('gpt-6 之外不预置 none', paramsFor('gpt-5').reasoningEffort === undefined)
 
 /* ---------- 生成请求字段 ---------- */
 const dsFields = tokenParams('deepseek-chat', 1024)
@@ -85,10 +87,33 @@ check('反向报文后改用 max_tokens', tokenParams('relay-e', 64).max_tokens 
 const msgReasoning =
   'Function tools with reasoning_effort are not supported for gpt-6-sol in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to \'none\'.'
 check('识别 reasoning_effort 报错', noteParamError('gpt-6-sol', msgReasoning) === true)
-check('学会后不再带 reasoning_effort', paramsFor('gpt-6-sol').reasoning === false)
-check('其它模型仍允许 reasoning_effort', paramsFor('deepseek-reasoner').reasoning === true)
+check('重复识别不再返回 true', noteParamError('gpt-6-sol', msgReasoning) === false)
+check('reasoningEffortFor 会发出 none', reasoningEffortFor('gpt-6-sol', 'auto') === 'none')
+check('学会后强制 reasoning_effort=none', paramsFor('gpt-6-sol').reasoningEffort === 'none')
+check('其它模型不受影响', paramsFor('deepseek-reasoner').reasoningEffort === undefined)
 
 resetParamOverrides()
+/* ---------- 学习结果落盘 ---------- */
+const cacheDir = resolve(root, '.tmp/param-cache-test')
+mkdirSync(cacheDir, { recursive: true })
+const cacheFile = resolve(cacheDir, 'model-params.json')
+try {
+  rmSync(cacheFile, { force: true })
+} catch {
+  /* 忽略 */
+}
+resetParamOverrides()
+setParamCacheFile(cacheFile)
+noteParamError('cached-model', "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.")
+check('学到的结论写进缓存文件', existsSync(cacheFile) && readFileSync(cacheFile, 'utf8').includes('cached-model'))
+
+resetParamOverrides()
+setParamCacheFile(cacheFile)
+check('重开（重新加载缓存）后仍然生效', paramsFor('cached-model').tokenField === 'max_completion_tokens')
+
+resetParamOverrides()
+setParamCacheFile(resolve(cacheDir, '不存在.json'))
+check('缓存文件不存在也不报错', paramsFor('cached-model').tokenField === 'max_tokens')
 resetParamOverrides()
 check('重置后回到初判', paramsFor('relay-a').tokenField === 'max_tokens')
 

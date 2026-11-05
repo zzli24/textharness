@@ -259,7 +259,7 @@ console.log('6) 参数兼容：max_tokens → max_completion_tokens')
 }
 
 /* ---------------- 7. 模型带工具时不接受 reasoning_effort ---------------- */
-console.log('7) 参数兼容：reasoning_effort 被拒后去掉')
+console.log('7) 参数兼容：reasoning_effort 被拒后改成 none')
 {
   const bodies = []
   globalThis.fetch = async (_url, init) => {
@@ -277,13 +277,13 @@ console.log('7) 参数兼容：reasoning_effort 被拒后去掉')
         { status: 400, headers: { 'content-type': 'application/json' } }
       )
     }
-    return sseResponse(textRound('去掉 reasoning_effort 后成功'))
+    return sseResponse(textRound('reasoning_effort 改成 none 后成功'))
   }
 
   let text = ''
   const result = await runAgent(
     baseOptions({
-      cfg: { ...cfg, llmModel: 'gpt-6-sol', llmReasoning: 'low' },
+      cfg: { ...cfg, llmModel: 'relay-reasoning', llmReasoning: 'low' },
       events: {
         onDelta: (kind, delta) => {
           if (kind === 'content') text += delta
@@ -293,8 +293,66 @@ console.log('7) 参数兼容：reasoning_effort 被拒后去掉')
     })
   )
   check('第一次带了 reasoning_effort', 'reasoning_effort' in bodies[0], JSON.stringify(Object.keys(bodies[0] ?? {})))
-  check('第二次不再带 reasoning_effort', bodies[1] && !('reasoning_effort' in bodies[1]), JSON.stringify(Object.keys(bodies[1] ?? {})))
-  check('最终成功', result.steps === 1 && text === '去掉 reasoning_effort 后成功', text)
+  check('第二次把 reasoning_effort 改成 none', bodies[1] && bodies[1].reasoning_effort === 'none', JSON.stringify(bodies[1] ?? {}))
+  check('最终成功', result.steps === 1 && text === 'reasoning_effort 改成 none 后成功', text)
+}
+
+/* ---------------- 8. 连续两个参数错误（reasoning + temperature） ---------------- */
+console.log('8) 参数兼容：连续踩坑（reasoning_effort → temperature）')
+{
+  const bodies = []
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    if (bodies.length === 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "Function tools with reasoning_effort are not supported for gpt-6-sol-seq in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.",
+            type: 'invalid_request_error',
+            param: 'reasoning_effort',
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    if (bodies.length === 2) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "Unsupported value: 'temperature' does not support 0.2 with this model. Only the default (1) value is supported.",
+            type: 'invalid_request_error',
+            param: 'temperature',
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    return sseResponse(textRound('两个坑都绕过'))
+  }
+
+  let text = ''
+  const result = await runAgent(
+    baseOptions({
+      cfg: { ...cfg, llmModel: 'relay-seq', llmReasoning: 'auto' },
+      events: {
+        onDelta: (kind, delta) => {
+          if (kind === 'content') text += delta
+        },
+        onTool: () => {},
+      },
+    })
+  )
+  check('一共请求 3 次', bodies.length === 3, `bodies=${bodies.length}`)
+  check('第 1 次没有 reasoning_effort', !('reasoning_effort' in bodies[0]), JSON.stringify(Object.keys(bodies[0] ?? {})))
+  check('第 2 次 reasoning_effort=none', bodies[1]?.reasoning_effort === 'none', JSON.stringify(bodies[1] ?? {}))
+  check(
+    '第 3 次既没有 temperature 也保留 reasoning none',
+    bodies[2] && !('temperature' in bodies[2]) && bodies[2].reasoning_effort === 'none',
+    JSON.stringify(Object.keys(bodies[2] ?? {}))
+  )
+  check('最终成功', result.steps === 1 && text === '两个坑都绕过', text)
 }
 
 /* ---------------- 汇总 ---------------- */
