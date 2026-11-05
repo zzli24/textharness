@@ -232,32 +232,63 @@ class ImageWidget extends WidgetType {
     wrap.className = 'cm-md-image'
     const img = document.createElement('img')
     img.alt = this.alt
-    const rel = decodeURI(this.src)
+    img.loading = 'lazy'
+
+    const raw = decodeURI(this.src.trim())
+    const fail = (): void => {
+      wrap.textContent = `图片无法加载：${this.alt || raw}`
+      wrap.classList.add('cm-md-error')
+    }
+    img.onerror = fail
+
+    // 1) 网络图片 / data URL / blob / file:// —— 直接用
+    if (/^(https?:|data:|blob:|file:)/i.test(raw)) {
+      img.src = raw
+      wrap.appendChild(img)
+      return wrap
+    }
+
+    // 2) 绝对路径：交给 th-asset 协议（它会校验是否在工作区内）
+    if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('/')) {
+      img.onerror = () => {
+        img.onerror = fail
+        img.src = `file:///${raw.replace(/\\/g, '/').replace(/^\/+/, '')}`
+      }
+      img.src = `th-asset://local/${encodeURIComponent(raw)}`
+      wrap.appendChild(img)
+      return wrap
+    }
+
+    // 3) 相对路径：按文档目录 → 工作区根 依次试
     const candidates = options
       .getBaseDirs()
-      .map((dir) => resolveRelPath(dir, rel))
+      .map((dir) => resolveRelPath(dir, raw))
       .filter((candidate): candidate is string => Boolean(candidate))
       .filter((candidate, index, all) => all.indexOf(candidate) === index)
+
+    if (candidates.length === 0) {
+      img.src = raw
+      wrap.appendChild(img)
+      return wrap
+    }
+
     let index = 0
     const show = (i: number): void => {
       img.src = `th-asset://local/${encodeURIComponent(candidates[i])}`
     }
     img.onerror = () => {
       index += 1
-      if (index < candidates.length) show(index)
-      else {
-        wrap.classList.add('cm-md-error')
-        wrap.textContent = `图片无法加载：${rel}`
+      if (index < candidates.length) {
+        show(index)
+      } else if (candidates.length > 0) {
+        // 都失败：最后试一下原始路径（可能是 http 相对地址）
+        img.onerror = fail
+        img.src = raw
+      } else {
+        fail()
       }
     }
-    if (candidates.length > 0) show(0)
-    else {
-      img.src = this.src
-      img.onerror = () => {
-        wrap.classList.add('cm-md-error')
-        wrap.textContent = `图片无法加载：${this.src}`
-      }
-    }
+    show(0)
     wrap.appendChild(img)
     return wrap
   }

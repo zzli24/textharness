@@ -134,7 +134,10 @@ function setupLiveMarkdownToggle(): void {
   configureLiveMarkdown({
     getBaseDirs: () => {
       const doc = activeDoc()
-      return doc?.path ? [dirName(doc.path), cfg.workspaceRoot] : [cfg.workspaceRoot]
+      // 与 hooksFor 保持一致：已保存文档按所在目录，未命名文档按当天目录
+      return doc?.path
+        ? [dirName(doc.path), cfg.workspaceRoot]
+        : [joinPath(cfg.workspaceRoot, today()), cfg.workspaceRoot]
     },
     onOpenTable: openMarkdownTableAsGrid,
   })

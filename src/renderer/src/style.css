@@ -4119,3 +4119,25 @@ html[data-theme='light'] .cm-bracket-l4 { color: #2f7d3c; }
   color: var(--danger);
   font-size: 12px;
 }
+/* 即时渲染里的图片：别撑破版心，长图限高 */
+.cm-md-image {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 0;
+  vertical-align: middle;
+}
+
+.cm-md-image img {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.cm-md-image.cm-md-error {
+  color: var(--danger);
+  font-size: 12px;
+}
