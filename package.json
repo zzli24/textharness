@@ -13,6 +13,7 @@
     "test:agent": "node scripts/test-agent.mjs",
     "test:services": "node scripts/test-services.mjs",
     "test:session-images": "node scripts/test-session-images.mjs",
+    "test:markdown": "node scripts/test-markdown.mjs",
     "start": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --win dir",
     "dist": "electron-vite build && electron-builder --win nsis",

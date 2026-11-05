@@ -27,6 +27,9 @@ jobs:
       - name: Selftest
         run: node scripts/selftest.mjs
 
+      - name: Markdown tests
+        run: node scripts/test-markdown.mjs
+
       - name: Build renderer/main
         run: npm run build
 
@@ -79,6 +82,9 @@ jobs:
 
       - name: Selftest
         run: node scripts/selftest.mjs
+
+      - name: Markdown tests
+        run: node scripts/test-markdown.mjs
 
       - name: Build renderer/main
         run: npm run build

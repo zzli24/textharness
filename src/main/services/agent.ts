@@ -260,6 +260,8 @@ export async function runAgent(opts: AgentOptions): Promise<{ steps: number }> {
     `- 你运行在用户配置的模型上：${model.model}（凭据来源：${model.origin}）。`,
     '- 被问到"你是什么模型 / 谁做的"时，如实回答驱动你的模型名，不要自称 GPT、Claude、Gemini 等其他厂商的模型。',
     '- 如果确实无法确定底层实现，就说"我由用户在设置里配置的模型驱动"，不要编造厂商。',
+    '- 需要罗列或对比多项内容时（配置清单、规格对照、参数比较），直接用 Markdown 表格回答：',
+    '  第一行表头，第二行 | --- |，之后每行一条；表格前后各加一句结论，别让表格孤零零地出现。',
   ].join('\n')
 
   const capNote =
