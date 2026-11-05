@@ -36,6 +36,9 @@ jobs:
       - name: Model params tests
         run: node scripts/test-modelparams.mjs
 
+      - name: Chat URL tests
+        run: node scripts/test-chaturl.mjs
+
       - name: Build renderer/main
         run: npm run build
 
@@ -97,6 +100,9 @@ jobs:
 
       - name: Model params tests
         run: node scripts/test-modelparams.mjs
+
+      - name: Chat URL tests
+        run: node scripts/test-chaturl.mjs
 
       - name: Build renderer/main
         run: npm run build

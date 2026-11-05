@@ -1,6 +1,6 @@
 {
   "name": "textharness",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "TextHarness - 轻量本地文本编辑器 + 内置 AI 助手",
   "main": "./out/main/index.js",
   "license": "MIT",
@@ -16,6 +16,7 @@
     "test:markdown": "node scripts/test-markdown.mjs",
     "test:grid": "node scripts/test-grid.mjs",
     "test:modelparams": "node scripts/test-modelparams.mjs",
+    "test:chaturl": "node scripts/test-chaturl.mjs",
     "start": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --win dir",
     "dist": "electron-vite build && electron-builder --win nsis",

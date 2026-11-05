@@ -2,6 +2,7 @@ import type { AppConfig } from '@shared/types'
 import { resolveModel } from './llm'
 import { fetchWithRetry } from './http'
 import { noteParamError, reasoningEffortFor, tokenParams } from './modelParams'
+import { resolveChatCompletionsUrl } from './chatUrl'
 
 /**
  * 归档前的「总结」：把一段对话/选区压成可直接进知识库的 markdown 章节。
@@ -50,7 +51,7 @@ async function chatOnce(
 
     try {
       const response = await fetchWithRetry(
-        `${model.baseURL}/chat/completions`,
+        resolveChatCompletionsUrl(model.baseURL),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },

@@ -4,6 +4,7 @@ import { TOOL_DEFS, buildSystemPrompt, runTool, type ToolContext } from './tools
 import { callMcpTool, isMcpTool, mcpNeedsConfirm, mcpToolDefs } from './mcp'
 import { explainHttpError, fetchWithRetry } from './http'
 import { noteParamError, reasoningEffortFor, tokenParams } from './modelParams'
+import { resolveChatCompletionsUrl } from './chatUrl'
 import { trace } from './logger'
 import type { MessageContent } from '@shared/types'
 
@@ -103,7 +104,7 @@ async function streamRound(
 
     try {
       res = await fetchWithRetry(
-        `${model.baseURL}/chat/completions`,
+        resolveChatCompletionsUrl(model.baseURL),
         {
           method: 'POST',
           headers: {
