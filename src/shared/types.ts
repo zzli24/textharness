@@ -33,6 +33,8 @@ export interface AppConfig {
   toolCap: number
   /** 外部 MCP 服务器，默认空 = 未配置 */
   mcpServers: McpServerConfig[]
+  /** Markdown 即时渲染（Typora 风格）：默认开启 */
+  liveMarkdown: boolean
   /** 编辑器字号（Ctrl + 滚轮调整） */
   editorFontSize: number
   /** 记忆检索是否用本地向量模型（关掉就走 BM25） */

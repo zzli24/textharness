@@ -52,6 +52,7 @@ function defaults(): AppConfig {
     toolCap: 35,
     mcpServers: [],
     editorFontSize: 13,
+    liveMarkdown: true,
     memorySemantic: false,
     bgImage: '',
     bgPreset: 0,

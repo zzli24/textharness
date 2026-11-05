@@ -59,6 +59,7 @@ import {
 } from '@codemirror/language'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { liveMarkdownExtension } from './liveMarkdown'
 import { MySQL, sql } from '@codemirror/lang-sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { lintGutter, linter, openLintPanel, type LintSource } from '@codemirror/lint'
@@ -72,6 +73,8 @@ const themeCompartment = new Compartment()
 
 /** 列选择模式开关：开启后普通拖拽也是矩形选择，不必按 Alt */
 const columnCompartment = new Compartment()
+/** Markdown 即时渲染开关：按文档重配置 */
+const liveMdCompartment = new Compartment()
 let columnModeOn = false
 
 export function columnExtension(enabled: boolean): Extension {
@@ -87,6 +90,19 @@ export function columnExtension(enabled: boolean): Extension {
 
 export function isColumnMode(): boolean {
   return columnModeOn
+}
+
+/** Markdown 文件判断（和语言选择保持一致） */
+export function isMarkdownFile(path: string | null): boolean {
+  const ext = (path ?? '').toLowerCase().split('.').pop() ?? ''
+  return ext === 'md' || ext === 'markdown'
+}
+
+/** 切换即时渲染：只对 Markdown 文档生效 */
+export function setLiveMarkdown(state: EditorState, enabled: boolean): EditorState {
+  return state.update({
+    effects: liveMdCompartment.reconfigure(enabled ? liveMarkdownExtension() : []),
+  }).state
 }
 
 export function setColumnMode(state: EditorState, enabled: boolean): EditorState {
@@ -460,6 +476,10 @@ export interface EditorHooks {
    * - 未命名文档：当日目录（粘贴图片时就是按这个前提算的相对路径），再退回工作区根
    */
   getBaseDirs(): string[]
+  /** 是否启用 Markdown 即时渲染 */
+  liveMarkdown?: boolean
+  /** 这篇文档按 Markdown 对待（未命名文档没有 path，用标题判断） */
+  isMarkdown?: boolean
   /** 这篇文档是否在工作区内（决定能不能把图片存进 .assets） */
   isInWorkspace?(path: string): boolean
   onUpdate(update: { docChanged: boolean; selectionSet: boolean; state: EditorState }): void
@@ -545,6 +565,7 @@ export function createState(
         })
       }),
       wrapsByDefault(path) ? EditorView.lineWrapping : [],
+      liveMdCompartment.of((hooks.isMarkdown ?? isMarkdownFile(path)) && hooks.liveMarkdown !== false ? liveMarkdownExtension() : []),
       languageFor(path),
     ],
   })

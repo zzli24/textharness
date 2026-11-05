@@ -23,8 +23,10 @@ import { openDiff } from './diffView'
 import { requestAccess, requestScriptApproval } from './approval'
 import { describeChange } from './recipes'
 import { closeToolsPanel, openToolsPanel } from './toolsPanel'
-import { createGrid, detectDelimiter, markdownToRows, rowsToMarkdown, type GridApi } from './gridView'
+import { createGrid, detectDelimiter, markdownToRows, rowsToMarkdown, serializeCsv, type GridApi } from './gridView'
 import { applyStall, applyUpdateEvent, chipAction, DOWNLOAD_PAGE, initialChip, type ChipState } from './updateChip'
+import { configureLiveMarkdown } from './liveMarkdown'
+import 'katex/dist/katex.min.css'
 import { createChat, type ChatApi } from './aiChat'
 
 /* ------------------------------------------------------------------ */
@@ -122,6 +124,51 @@ function setupUpdater(): void {
       paint()
     }
   }, 5000)
+}
+
+/** 状态栏「即时渲染」开关：Markdown 文档才显示 */
+function setupLiveMarkdownToggle(): void {
+  const button = document.getElementById('st-live-md') as HTMLButtonElement | null
+  if (!button) return
+
+  configureLiveMarkdown({
+    getBaseDirs: () => {
+      const doc = activeDoc()
+      return doc?.path ? [dirName(doc.path), cfg.workspaceRoot] : [cfg.workspaceRoot]
+    },
+    onOpenTable: openMarkdownTableAsGrid,
+  })
+
+  const refresh = (): void => {
+    const doc = activeDoc()
+    const isMd = docIsMarkdown(doc)
+    button.classList.toggle('hidden', !isMd)
+    button.classList.toggle('active', isMd && cfg.liveMarkdown !== false)
+    button.title =
+      cfg.liveMarkdown !== false
+        ? '即时渲染：开（光标所在行显示源码；点一下切回源码模式）'
+        : '即时渲染：关（当前是纯源码模式；点一下打开即时渲染）'
+  }
+
+  const toggle = (): void => {
+    const doc = activeDoc()
+    if (!docIsMarkdown(doc)) return
+    cfg.liveMarkdown = cfg.liveMarkdown === false
+    void window.th.config.patch({ liveMarkdown: cfg.liveMarkdown })
+    for (const item of docs) {
+      if (docIsMarkdown(item)) {
+        item.state = ed.setLiveMarkdown(item.state, cfg.liveMarkdown !== false)
+      }
+    }
+    const current = activeDoc()
+    if (current && current.kind === 'text') view.setState(current.state)
+    refresh()
+    toast(cfg.liveMarkdown !== false ? '已开启即时渲染' : '已切换到源码模式')
+  }
+
+  button.addEventListener('click', toggle)
+  document.addEventListener('th:doc-changed', refresh)
+  refresh()
 }
 
 function toast(message: string): void {
@@ -295,6 +342,8 @@ function hooksFor(doc: Doc): ed.EditorHooks {
       doc.path
         ? [dirName(doc.path), cfg.workspaceRoot]
         : [joinPath(cfg.workspaceRoot, today()), cfg.workspaceRoot],
+    liveMarkdown: cfg.liveMarkdown !== false,
+    isMarkdown: ed.isMarkdownFile(doc.path ?? doc.title),
     onUpdate: ({ docChanged, state }) => {
       // ★ 必须把最新的 EditorState 写回文档对象，否则切标签/保存拿到的都是旧状态
       doc.state = state
@@ -350,6 +399,7 @@ function openDoc(doc: Doc): void {
   renderTabs()
   updateStatus()
   schedulePersist()
+  document.dispatchEvent(new CustomEvent('th:doc-changed'))
 }
 
 /* ---------------- CSV 表格文档 ---------------- */
@@ -434,6 +484,26 @@ function markdownSelectionToGrid(): void {
   toast('已转成表格标签')
 }
 /** 新建一个表格标签 */
+/** 这篇文档是否按 Markdown 渲染（未命名文档没有 path，用标题判断） */
+function docIsMarkdown(doc: Doc | null): boolean {
+  return !!doc && doc.kind === 'text' && ed.isMarkdownFile(doc.path ?? doc.title)
+}
+
+/** Markdown 即时渲染里双击表格 → 用 CSV 表格视图编辑 */
+function openMarkdownTableAsGrid(rows: string[][]): void {
+  untitledSeq += 1
+  const doc = makeDoc(
+    null,
+    serializeCsv(rows, ','),
+    { encoding: cfg.defaultEncoding, bom: false, eol: 'CRLF' },
+    `未命名-${untitledSeq}.csv`
+  )
+  doc.kind = 'grid'
+  doc.delimiter = ','
+  openDoc(doc)
+  toast('已打开表格视图；保存后可复制回 Markdown')
+}
+
 function newGridDoc(rows = 3, cols = 3): void {
   untitledSeq += 1
   const title = `未命名-${untitledSeq}.csv`
@@ -2734,6 +2804,7 @@ async function boot(): Promise<void> {
 
   setupSplitResizer()
   setupUpdater()
+setupLiveMarkdownToggle()
   setupDropZone()
 
   $('st-diff').addEventListener('click', () => {
