@@ -30,6 +30,9 @@ jobs:
       - name: Markdown tests
         run: node scripts/test-markdown.mjs
 
+      - name: Grid tests
+        run: node scripts/test-grid.mjs
+
       - name: Build renderer/main
         run: npm run build
 
@@ -85,6 +88,9 @@ jobs:
 
       - name: Markdown tests
         run: node scripts/test-markdown.mjs
+
+      - name: Grid tests
+        run: node scripts/test-grid.mjs
 
       - name: Build renderer/main
         run: npm run build
