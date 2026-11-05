@@ -793,7 +793,47 @@ header .points li::before {
   font-size: 13.5px;
   color: var(--dim);
 }
-</style>
+
+    /* ---------- GitHub 入口 ---------- */
+    nav .links a.gh-link {
+      color: var(--fg);
+      opacity: 0.75;
+    }
+
+    nav .links a.gh-link:hover {
+      opacity: 1;
+      color: var(--accent);
+    }
+
+    .download-foot {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      color: var(--dim);
+      font-size: 13px;
+    }
+
+    .download-foot a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(91, 140, 255, 0.35);
+    }
+
+    .download-foot a:hover {
+      border-bottom-color: var(--accent);
+    }
+
+    footer a {
+      color: var(--dim);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--fg);
+    }
+  </style>
   <body>
     <div class="aurora"></div>
     <div class="grid-overlay"></div>
@@ -808,6 +848,7 @@ header .points li::before {
           <a href="#capabilities">功能</a>
           <a href="#fit">适合谁</a>
           <a href="#download">下载</a>
+          <a class="gh-link" href="https://github.com/zzli24/textharness" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
         </div>
       </nav>
 
@@ -1053,11 +1094,20 @@ header .points li::before {
             </div>
           </div>
         </div>
+
+        <div class="download-foot reveal">
+          <span>源码开放在</span>
+          <a href="https://github.com/zzli24/textharness" target="_blank" rel="noopener noreferrer">github.com/zzli24/textharness</a>
+          <span>· MIT · 有问题去 Issues</span>
+        </div>
       </section>
 
       <footer>
         <div>TextHarness v{{VERSION}} · 本地优先 · 数据不出机器</div>
-        <div>Chromium 内核 · TypeScript strict · 无遥测</div>
+        <div>
+          <a href="https://github.com/zzli24/textharness" target="_blank" rel="noopener noreferrer">GitHub</a>
+          · MIT · Chromium 内核 · 无遥测
+        </div>
       </footer>
     </div>
 
