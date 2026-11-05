@@ -53,6 +53,7 @@ function defaults(): AppConfig {
     mcpServers: [],
     editorFontSize: 13,
     liveMarkdown: true,
+    mdTheme: 'github',
     memorySemantic: false,
     bgImage: '',
     bgPreset: 0,
@@ -93,6 +94,9 @@ export function loadConfig(): AppConfig {
   if (!Array.isArray(cfg.enabledTools)) cfg.enabledTools = []
   if (!cfg.providerProfiles || typeof cfg.providerProfiles !== 'object') cfg.providerProfiles = {}
   if (typeof cfg.memorySemantic !== 'boolean') cfg.memorySemantic = false
+  if (!['github', 'bear', 'typo', 'vue', 'solarized', 'dracula', 'custom'].includes(cfg.mdTheme)) {
+    cfg.mdTheme = 'github'
+  }
   if (typeof cfg.editorFontSize !== 'number' || cfg.editorFontSize < 8 || cfg.editorFontSize > 28) {
     cfg.editorFontSize = 13
   }

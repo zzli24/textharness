@@ -166,6 +166,7 @@ function setupLiveMarkdownToggle(): void {
     const current = activeDoc()
     if (current && current.kind === 'text') view.setState(current.state)
     refresh()
+    updateMdLiveClass()
     toast(cfg.liveMarkdown !== false ? '已开启即时渲染' : '已切换到源码模式')
   }
 
@@ -792,6 +793,7 @@ function pushDirty(): void {
 }
 
 function updateStatus(): void {
+  updateMdLiveClass()
   const doc = activeDoc()
   if (!doc) return
   const sel = view.state.selection.main
@@ -2443,11 +2445,46 @@ function applyTheme(theme: 'dark' | 'light'): void {
   if (view && current) view.setState(current.state)
 }
 
+const MD_THEME_IDS = ['github', 'bear', 'typo', 'vue', 'solarized', 'dracula', 'custom'] as const
+
+/**
+ * 切换 Markdown 渲染主题。
+ * 主题只改一组 CSS 变量（mdThemes.css），不需要重建编辑器状态；
+ * custom 时额外读工作区里的 md-theme.css 注入。
+ */
+async function applyMdTheme(themeId: string): Promise<void> {
+  const id = (MD_THEME_IDS as readonly string[]).includes(themeId) ? themeId : 'github'
+  document.documentElement.dataset['mdTheme'] = id
+  document.getElementById('md-custom-css')?.remove()
+  updateMdLiveClass()
+  if (id !== 'custom') return
+  const path = joinPath(cfg.workspaceRoot, 'md-theme.css')
+  try {
+    const file = await window.th.fs.read(path)
+    const style = document.createElement('style')
+    style.id = 'md-custom-css'
+    style.textContent = file.text
+    document.head.appendChild(style)
+  } catch {
+    // 没这个文件就保持基础 token（等同 GitHub 风格）
+  }
+}
+
+/** 只有「Markdown + 即时渲染 + 非源码视图」时才启用主题排版 */
+function updateMdLiveClass(): void {
+  const doc = activeDoc()
+  const host = document.getElementById('editor-host')
+  if (!host) return
+  const on = !!doc && doc.kind === 'text' && !doc.srcView && docIsMarkdown(doc) && cfg.liveMarkdown !== false
+  host.classList.toggle('md-live', on)
+}
+
 async function openSettingsFlow(): Promise<void> {
   const next = await openSettings(cfg)
   if (!next) return
   cfg = await window.th.config.patch(next)
   applyTheme(cfg.theme)
+  void applyMdTheme(cfg.mdTheme)
   applyBackground(cfg)
   document.documentElement.style.setProperty('--side-w', `${cfg.sideWidth}px`)
   document.documentElement.style.setProperty('--ai-w', `${cfg.aiWidth}px`)
@@ -2493,6 +2530,7 @@ const WELCOME = `# TextHarness
 async function boot(): Promise<void> {
   cfg = await window.th.config.get()
   document.documentElement.dataset['theme'] = cfg.theme
+  void applyMdTheme(cfg.mdTheme)
   applyBackground(cfg)
   // 状态栏显示版本，排查问题时能确认用户跑的是哪一版
   void window.th.app
@@ -2631,6 +2669,7 @@ async function boot(): Promise<void> {
           const next: AppConfig = { ...cfg, ...patch }
           cfg = next
           applyTheme(next.theme)
+          void applyMdTheme(next.mdTheme)
           applyBackground(next)
           void window.th.config.patch(patch)
           const parts: string[] = []
@@ -2941,6 +2980,7 @@ setupLiveMarkdownToggle()
     })()
   }) as EventListener)
   // 对话里点 `路径:行号` → 打开那个文件并跳到对应行
+  document.addEventListener('th:md-theme-changed', () => void applyMdTheme(cfg.mdTheme))
   window.addEventListener('th:open-path', ((event: CustomEvent<string | { path: string; line?: number }>) => {
     const detail = event.detail
     const raw = typeof detail === 'string' ? detail : (detail?.path ?? '')

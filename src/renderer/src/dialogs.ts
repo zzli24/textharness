@@ -294,7 +294,8 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
     /* ================= 可编辑状态 ================= */
     let workspaceRoot = current.workspaceRoot
     let defaultEncoding = current.defaultEncoding
-    let theme = current.theme
+    let mdTheme = current.mdTheme ?? 'github'
+let theme = current.theme
     let bgImage = current.bgImage
     let bgPreset = current.bgPreset ?? 0
     let bgOpacity = current.bgOpacity
@@ -545,6 +546,187 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
           .catch((err: unknown) => {
             customName.textContent = `导入失败：${err instanceof Error ? err.message : String(err)}`
           })
+      })
+
+      title(pane, 'Markdown 渲染')
+      desc(pane, '只影响 .md 的即时渲染，源码模式不受影响；主题会跟随深色/浅色自动切换色板。')
+
+      const mdThemes = [
+        {
+          id: 'github',
+          name: 'GitHub',
+          desc: '文档风 · 竖线表格 · 蓝链接',
+          light: ['#ffffff', '#1f2328', '#0969da', '#d1d9e0'],
+          dark: ['#0d1117', '#f0f6fc', '#4493f8', '#3d444d'],
+        },
+        {
+          id: 'bear',
+          name: 'Bear',
+          desc: '暖白 · 大行距 · 弱边框',
+          light: ['#ffffff', '#222222', '#2478c5', '#bfbfbf'],
+          dark: ['#1f1f1f', '#e8e8e8', '#6cb6ff', '#4a4a4a'],
+        },
+        {
+          id: 'typo',
+          name: 'Typo',
+          desc: '中文衬线标题 · 青色强调',
+          light: ['#ffffff', '#333333', '#1abc9c', '#dddddd'],
+          dark: ['#15171a', '#d7dbe0', '#2fd3b3', '#333a40'],
+        },
+        {
+          id: 'vue',
+          name: 'Vue',
+          desc: '绿色强调 · 技术文档',
+          light: ['#ffffff', '#34495e', '#42b983', '#eaecef'],
+          dark: ['#1e2124', '#c8d0d8', '#4fd1a0', '#333a42'],
+        },
+        {
+          id: 'solarized',
+          name: 'Solarized',
+          desc: '暖米 / 深青，官方成对色板',
+          light: ['#fdf6e3', '#323e45', '#ac7514', '#93a1a1'],
+          dark: ['#0b3742', '#9ba6a4', '#3fc6b4', '#03303a'],
+        },
+        {
+          id: 'dracula',
+          name: 'Dracula',
+          desc: '深色霓虹 · Alucard 浅色',
+          light: ['#f5f5f5', '#1f1f1f', '#644ac9', '#cfcfcf'],
+          dark: ['#353846', '#f8f8f2', '#50fa7b', '#bd93f9'],
+        },
+        {
+          id: 'custom',
+          name: '自定义 CSS',
+          desc: '工作区 md-theme.css',
+          light: ['#ffffff', '#333333', '#5b8cff', '#dddddd'],
+          dark: ['#1e1f22', '#e6e6e6', '#7aa2ff', '#3a3b40'],
+        },
+      ] as const
+
+      const mdGrid = document.createElement('div')
+      mdGrid.className = 'md-theme-grid'
+      const mdCards: HTMLButtonElement[] = []
+      for (const item of mdThemes) {
+        const card = document.createElement('button')
+        card.type = 'button'
+        card.className = 'md-theme-card'
+        card.dataset['theme'] = item.id
+
+        const name = document.createElement('span')
+        name.className = 'mdt-name'
+        name.textContent = item.name
+        const descEl = document.createElement('span')
+        descEl.className = 'mdt-desc'
+        descEl.textContent = item.desc
+        card.append(name, descEl)
+
+        if (item.id !== 'custom') {
+          const swatches = document.createElement('span')
+          swatches.className = 'mdt-swatches'
+          for (const color of item.light) {
+            const chip = document.createElement('i')
+            chip.style.background = color
+            swatches.appendChild(chip)
+          }
+          for (const color of item.dark) {
+            const chip = document.createElement('i')
+            chip.style.background = color
+            swatches.appendChild(chip)
+          }
+          card.appendChild(swatches)
+        }
+
+        card.addEventListener('click', () => {
+          mdTheme = item.id as typeof mdTheme
+          syncMdCards()
+        })
+        mdCards.push(card)
+        mdGrid.appendChild(card)
+      }
+      pane.appendChild(mdGrid)
+
+      const syncMdCards = (): void => {
+        for (const card of mdCards) {
+          card.classList.toggle('active', card.dataset['theme'] === mdTheme)
+        }
+      }
+      syncMdCards()
+
+      const mdCustomRow = document.createElement('div')
+      mdCustomRow.className = 'md-custom-row'
+      const sep = current.workspaceRoot.includes('\\') ? '\\' : '/'
+      const mdCssPath = `${current.workspaceRoot.replace(/[\\/]+$/, '')}${sep}md-theme.css`
+      const pathCode = document.createElement('code')
+      pathCode.textContent = 'md-theme.css'
+      pathCode.title = mdCssPath
+      const createBtn = button('创建 / 打开')
+      const reloadBtn = button('重新加载')
+      const hint = document.createElement('span')
+      hint.textContent = '选「自定义 CSS」后生效；变量名见文件内注释。'
+      mdCustomRow.append(pathCode, createBtn, reloadBtn, hint)
+      pane.appendChild(mdCustomRow)
+
+      const MD_CSS_TEMPLATE = `/* TextHarness 自定义 Markdown 渲染样式
+ * 在 设置 → 外观 → Markdown 渲染 里选「自定义 CSS」后生效。
+ * 变量说明：
+ *   --md-font / --md-heading-font   正文字体、标题字体
+ *   --md-line                       行高
+ *   --md-h1-size / --md-h2-size    标题字号（em）
+ *   --md-fg / --md-head / --md-muted  正文 / 标题 / 弱化文字颜色
+ *   --md-link / --md-accent           链接色 / 强调色
+ *   --md-code-bg / --md-code-fg       代码块背景 / 文字
+ *   --md-inline-bg                    行内代码背景
+ *   --md-border                       边框（表格、图片、引用）
+ *   --md-table-head-bg / --md-table-stripe  表头、斑马纹
+ *   --md-table-vborder                表格竖线宽度（0 表示不要竖线）
+ * 也可以直接写普通 CSS，例如：
+ *   .cm-md-h1 { letter-spacing: 0.02em; }
+ */
+
+html[data-md-theme='custom'] {
+  --md-font: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --md-line: 1.75;
+  --md-fg: #333333;
+  --md-head: #111111;
+  --md-link: #5b8cff;
+  --md-border: rgba(127, 127, 127, 0.35);
+  --md-code-bg: rgba(127, 127, 127, 0.1);
+  --md-table-head-bg: rgba(127, 127, 127, 0.08);
+  --md-table-vborder: 1px;
+}
+
+html[data-md-theme='custom'][data-theme='dark'] {
+  --md-fg: #d8dbe2;
+  --md-head: #f2f4f8;
+  --md-link: #7aa2ff;
+  --md-border: rgba(255, 255, 255, 0.14);
+  --md-code-bg: rgba(255, 255, 255, 0.07);
+  --md-table-head-bg: rgba(255, 255, 255, 0.06);
+}
+`
+
+      createBtn.addEventListener('click', () => {
+        void (async () => {
+          try {
+            const stat = await window.th.fs.stat(mdCssPath).catch(() => null)
+            if (!stat) {
+              await window.th.fs.write(mdCssPath, MD_CSS_TEMPLATE, {
+                encoding: current.defaultEncoding,
+                bom: false,
+                eol: 'LF',
+              })
+            }
+            document.dispatchEvent(new CustomEvent('th:open-path', { detail: { path: mdCssPath }, bubbles: true }))
+            hint.textContent = '已打开；改完点「重新加载」立即生效。'
+          } catch (err) {
+            hint.textContent = `创建失败：${err instanceof Error ? err.message : String(err)}`
+          }
+        })()
+      })
+
+      reloadBtn.addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('th:md-theme-changed'))
+        hint.textContent = '已重新加载自定义 CSS。'
       })
 
       const slider = (
@@ -1522,6 +1704,7 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
         toolCap: toolState.cap,
         bgImage,
         bgPreset,
+        mdTheme,
         bgOpacity,
         bgBlur,
         bgDim,

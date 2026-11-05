@@ -1,0 +1,540 @@
+/* ============================================================
+ * Markdown 即时渲染主题（预设）
+ *
+ * 结构参考：
+ *   - github-markdown-css：一套排版 + light/dark 两份色板
+ *   - MWeb themes：core 排版骨架 + 每个主题只换 palette 变量
+ *
+ * 约定：
+ *   1. 这里只覆盖「渲染出来的元素」，代码 token 的颜色仍由编辑器主题管
+ *   2. 每个预设都给出 light / dark 两套 palette，跟随应用深浅色
+ *   3. 自定义 CSS（工作区 md-theme.css）通过 html[data-md-theme='custom'] 叠加
+ * ============================================================ */
+
+/* ---------- 基础 token：默认 = GitHub 风格 ---------- */
+
+:root,
+html[data-md-theme='github'][data-theme='light'] {
+  --md-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Microsoft YaHei', sans-serif;
+  --md-heading-font: var(--md-font);
+  --md-line: 1.65;
+  --md-heading-line: 1.3;
+  --md-h1-size: 1.85em;
+  --md-h2-size: 1.5em;
+  --md-h3-size: 1.25em;
+  --md-h1-weight: 700;
+  --md-h2-weight: 700;
+  --md-h3-weight: 650;
+  --md-h1-align: left;
+  --md-h1-border: 1px solid #d1d9e0;
+  --md-h1-pad: 0.25em;
+  --md-h2-bar: 0px;
+  --md-h2-pad: 0px;
+  --md-fg: #1f2328;
+  --md-head: #1f2328;
+  --md-muted: #59636e;
+  --md-link: #0969da;
+  --md-border: #d1d9e0;
+  --md-accent: #0969da;
+  --md-code-bg: #f6f8fa;
+  --md-code-fg: #1f2328;
+  --md-code-border: #d1d9e0;
+  --md-inline-bg: rgba(175, 184, 193, 0.2);
+  --md-inline-fg: #1f2328;
+  --md-quote-bg: transparent;
+  --md-quote-bar: 4px;
+  --md-table-head-bg: #f6f8fa;
+  --md-table-stripe: rgba(246, 248, 250, 0.55);
+  --md-table-vborder: 1px;
+  --md-image-radius: 6px;
+  --md-code-radius: 8px;
+}
+
+html[data-md-theme='github'][data-theme='dark'] {
+  --md-h1-border: 1px solid #3d444d;
+  --md-fg: #f0f6fc;
+  --md-head: #f0f6fc;
+  --md-muted: #9198a1;
+  --md-link: #4493f8;
+  --md-border: #3d444d;
+  --md-accent: #4493f8;
+  --md-code-bg: #161b22;
+  --md-code-fg: #f0f6fc;
+  --md-code-border: #3d444d;
+  --md-inline-bg: rgba(110, 118, 129, 0.4);
+  --md-inline-fg: #f0f6fc;
+  --md-table-head-bg: #161b22;
+  --md-table-stripe: rgba(110, 118, 129, 0.08);
+}
+
+/* ---------- Bear：暖白、大行距、弱边框 ---------- */
+
+html[data-md-theme='bear'][data-theme='light'] {
+  --md-font: 'AvenirNext-Regular', -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --md-heading-font: var(--md-font);
+  --md-line: 1.75;
+  --md-heading-line: 1.35;
+  --md-h1-size: 1.5em;
+  --md-h2-size: 1.3em;
+  --md-h3-size: 1.1em;
+  --md-h1-weight: 700;
+  --md-h2-weight: 700;
+  --md-h3-weight: 700;
+  --md-h1-border: none;
+  --md-h1-pad: 0;
+  --md-h2-bar: 0px;
+  --md-h2-pad: 0px;
+  --md-fg: #222222;
+  --md-head: #262626;
+  --md-muted: #525252;
+  --md-link: #2478c5;
+  --md-border: #bfbfbf;
+  --md-accent: #2478c5;
+  --md-code-bg: #f7f7f7;
+  --md-code-fg: #424242;
+  --md-code-border: #e3e3e3;
+  --md-inline-bg: rgba(0, 0, 0, 0.06);
+  --md-inline-fg: #424242;
+  --md-quote-bg: transparent;
+  --md-quote-bar: 3px;
+  --md-table-head-bg: transparent;
+  --md-table-stripe: transparent;
+  --md-table-vborder: 0px;
+  --md-image-radius: 8px;
+}
+
+html[data-md-theme='bear'][data-theme='dark'] {
+  --md-fg: #e8e8e8;
+  --md-head: #f2f2f2;
+  --md-muted: #a8a8a8;
+  --md-link: #6cb6ff;
+  --md-border: #4a4a4a;
+  --md-accent: #6cb6ff;
+  --md-code-bg: #262626;
+  --md-code-fg: #dcdcdc;
+  --md-code-border: #3a3a3a;
+  --md-inline-bg: rgba(255, 255, 255, 0.08);
+  --md-inline-fg: #dcdcdc;
+  --md-table-stripe: transparent;
+  --md-table-head-bg: transparent;
+}
+
+/* ---------- Typo：中文向，衬线标题，青色强调 ---------- */
+
+html[data-md-theme='typo'][data-theme='light'] {
+  --md-font: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --md-heading-font: Palatino, Optima, Georgia, 'Songti SC', 'SimSun', serif;
+  --md-line: 1.85;
+  --md-heading-line: 1.4;
+  --md-h1-size: 2em;
+  --md-h2-size: 1.5em;
+  --md-h3-size: 1.25em;
+  --md-h1-weight: 700;
+  --md-h2-weight: 700;
+  --md-h3-weight: 700;
+  --md-h1-align: center;
+  --md-h1-border: 1px solid #dddddd;
+  --md-h1-pad: 0.35em;
+  --md-h2-bar: 4px;
+  --md-h2-pad: 12px;
+  --md-fg: #333333;
+  --md-head: #000000;
+  --md-muted: #888888;
+  --md-link: #1abc9c;
+  --md-border: #dddddd;
+  --md-accent: #1abc9c;
+  --md-code-bg: #f8f8f8;
+  --md-code-fg: #333333;
+  --md-code-border: #dddddd;
+  --md-inline-bg: rgba(26, 188, 156, 0.12);
+  --md-inline-fg: #158f78;
+  --md-quote-bg: #fffdd1;
+  --md-quote-bar: 1px;
+  --md-table-head-bg: #f8f8f8;
+  --md-table-stripe: transparent;
+  --md-table-vborder: 0px;
+  --md-image-radius: 4px;
+}
+
+html[data-md-theme='typo'][data-theme='dark'] {
+  --md-h1-border: 1px solid #333a40;
+  --md-fg: #d7dbe0;
+  --md-head: #f1f4f6;
+  --md-muted: #8f9aa3;
+  --md-link: #2fd3b3;
+  --md-border: #333a40;
+  --md-accent: #2fd3b3;
+  --md-code-bg: #1b1e21;
+  --md-code-fg: #d7dbe0;
+  --md-code-border: #2c3237;
+  --md-inline-bg: rgba(47, 211, 179, 0.16);
+  --md-inline-fg: #6ee7cf;
+  --md-quote-bg: rgba(47, 211, 179, 0.08);
+  --md-table-head-bg: #22262a;
+  --md-table-stripe: transparent;
+}
+
+/* ---------- Vue：技术文档，绿色强调 ---------- */
+
+html[data-md-theme='vue'][data-theme='light'] {
+  --md-font: 'Source Sans Pro', -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --md-heading-font: var(--md-font);
+  --md-line: 1.7;
+  --md-heading-line: 1.35;
+  --md-h1-size: 1.8em;
+  --md-h2-size: 1.45em;
+  --md-h3-size: 1.2em;
+  --md-h1-weight: 600;
+  --md-h2-weight: 600;
+  --md-h3-weight: 600;
+  --md-h1-border: none;
+  --md-h1-pad: 0;
+  --md-h2-bar: 0px;
+  --md-h2-pad: 0px;
+  --md-fg: #34495e;
+  --md-head: #2c3e50;
+  --md-muted: #7f8c8d;
+  --md-link: #e96900;
+  --md-border: #eaecef;
+  --md-accent: #42b983;
+  --md-code-bg: #f8f8f8;
+  --md-code-fg: #34495e;
+  --md-code-border: #eaecef;
+  --md-inline-bg: rgba(66, 185, 131, 0.12);
+  --md-inline-fg: #2c8f66;
+  --md-quote-bg: transparent;
+  --md-quote-bar: 4px;
+  --md-table-head-bg: #f9fafb;
+  --md-table-stripe: rgba(249, 250, 251, 0.8);
+  --md-table-vborder: 1px;
+  --md-image-radius: 4px;
+}
+
+html[data-md-theme='vue'][data-theme='dark'] {
+  --md-fg: #c8d0d8;
+  --md-head: #e6edf3;
+  --md-muted: #8b949e;
+  --md-link: #ffb26b;
+  --md-border: #333a42;
+  --md-accent: #4fd1a0;
+  --md-code-bg: #1b1e22;
+  --md-code-fg: #c8d0d8;
+  --md-code-border: #2c3237;
+  --md-inline-bg: rgba(79, 209, 160, 0.14);
+  --md-inline-fg: #7ce0b8;
+  --md-table-head-bg: #20242a;
+  --md-table-stripe: rgba(79, 209, 160, 0.04);
+}
+
+/* ---------- Solarized：暖米 / 深青 ---------- */
+
+html[data-md-theme='solarized'][data-theme='light'] {
+  --md-font: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  --md-heading-font: var(--md-font);
+  --md-line: 1.75;
+  --md-heading-line: 1.35;
+  --md-h1-size: 1.8em;
+  --md-h2-size: 1.45em;
+  --md-h3-size: 1.2em;
+  --md-h1-weight: 600;
+  --md-h2-weight: 600;
+  --md-h3-weight: 600;
+  --md-h1-border: 1px solid rgba(147, 161, 161, 0.4);
+  --md-h1-pad: 0.3em;
+  --md-h2-bar: 0px;
+  --md-h2-pad: 0px;
+  --md-fg: #323e45;
+  --md-head: #3b4f54;
+  --md-muted: #93a1a1;
+  --md-link: #ac7514;
+  --md-border: rgba(147, 161, 161, 0.5);
+  --md-accent: #ac7514;
+  --md-code-bg: #fcf4dc;
+  --md-code-fg: #586e75;
+  --md-code-border: rgba(147, 161, 161, 0.4);
+  --md-inline-bg: rgba(147, 161, 161, 0.22);
+  --md-inline-fg: #586e75;
+  --md-quote-bg: rgba(147, 161, 161, 0.12);
+  --md-quote-bar: 4px;
+  --md-table-head-bg: #eee8d5;
+  --md-table-stripe: rgba(147, 161, 161, 0.08);
+  --md-table-vborder: 1px;
+  --md-image-radius: 4px;
+}
+
+html[data-md-theme='solarized'][data-theme='dark'] {
+  --md-h1-border: 1px solid rgba(3, 44, 54, 1);
+  --md-fg: #9ba6a4;
+  --md-head: #abb5b4;
+  --md-muted: #6a8690;
+  --md-link: #3fc6b4;
+  --md-border: rgba(3, 44, 54, 1);
+  --md-accent: #3fc6b4;
+  --md-code-bg: #062128;
+  --md-code-fg: #93a1a1;
+  --md-code-border: rgba(63, 198, 180, 0.2);
+  --md-inline-bg: rgba(63, 198, 180, 0.15);
+  --md-inline-fg: #93a1a1;
+  --md-quote-bg: rgba(63, 198, 180, 0.08);
+  --md-table-head-bg: #0e414f;
+  --md-table-stripe: rgba(63, 198, 180, 0.06);
+}
+
+/* ---------- Dracula / Alucard（备选） ---------- */
+
+html[data-md-theme='dracula'][data-theme='light'] {
+  --md-font: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  --md-heading-font: var(--md-font);
+  --md-line: 1.7;
+  --md-heading-line: 1.35;
+  --md-h1-size: 1.8em;
+  --md-h2-size: 1.45em;
+  --md-h3-size: 1.2em;
+  --md-h1-border: none;
+  --md-h1-pad: 0;
+  --md-h2-bar: 0px;
+  --md-h2-pad: 0px;
+  --md-fg: #1f1f1f;
+  --md-head: #1f1f1f;
+  --md-muted: #6c664b;
+  --md-link: #644ac9;
+  --md-border: #cfcfcf;
+  --md-accent: #a3144d;
+  --md-code-bg: #f3f3f3;
+  --md-code-fg: #1f1f1f;
+  --md-code-border: #e0e0e0;
+  --md-inline-bg: rgba(100, 74, 201, 0.12);
+  --md-inline-fg: #644ac9;
+  --md-quote-bg: transparent;
+  --md-quote-bar: 4px;
+  --md-table-head-bg: #f3f3f3;
+  --md-table-stripe: rgba(0, 0, 0, 0.03);
+  --md-table-vborder: 1px;
+  --md-image-radius: 6px;
+}
+
+html[data-md-theme='dracula'][data-theme='dark'] {
+  --md-fg: #f8f8f2;
+  --md-head: #50fa7b;
+  --md-muted: #9aa0b5;
+  --md-link: #8be9fd;
+  --md-border: rgba(187, 145, 248, 0.4);
+  --md-accent: #bd93f9;
+  --md-code-bg: #1f202a;
+  --md-code-fg: #f8f8f2;
+  --md-code-border: rgba(187, 145, 248, 0.25);
+  --md-inline-bg: rgba(189, 147, 249, 0.18);
+  --md-inline-fg: #f8f8f2;
+  --md-quote-bg: rgba(189, 147, 249, 0.08);
+  --md-table-head-bg: #21222c;
+  --md-table-stripe: rgba(189, 147, 249, 0.05);
+}
+
+/* ---------- 应用 token（覆盖基础样式） ---------- */
+
+#editor-host.md-live .cm-scroller {
+  font-family: var(--md-font);
+}
+
+#editor-host.md-live .cm-content {
+  color: var(--md-fg);
+}
+
+#editor-host.md-live .cm-line {
+  line-height: var(--md-line);
+}
+
+/* CM 的 Markdown 语法高亮会给正文/标题加自己的 token 颜色，
+ * 会盖掉主题色；这里让非代码块里的普通 token 继承主题色。
+ * 代码块（有 cm-md-codeblock 行类）保持语法高亮。 */
+#editor-host.md-live .cm-line:not(.cm-md-codeblock):not(.cm-md-codeblock-active) span:not([class*='cm-md-']) {
+  color: inherit !important;
+}
+
+.cm-md-h1,
+.cm-md-h2,
+.cm-md-h3,
+.cm-md-h4,
+.cm-md-h5,
+.cm-md-h6 {
+  font-family: var(--md-heading-font);
+  color: var(--md-head);
+  line-height: var(--md-heading-line);
+}
+
+.cm-md-h1 {
+  font-size: var(--md-h1-size);
+  font-weight: var(--md-h1-weight);
+  text-align: var(--md-h1-align);
+  border-bottom: var(--md-h1-border);
+  padding-bottom: var(--md-h1-pad);
+}
+
+.cm-md-h2 {
+  font-size: var(--md-h2-size);
+  font-weight: var(--md-h2-weight);
+  box-shadow: inset var(--md-h2-bar) 0 var(--md-accent);
+  padding-left: var(--md-h2-pad);
+}
+
+.cm-md-h3 {
+  font-size: var(--md-h3-size);
+  font-weight: var(--md-h3-weight);
+}
+
+.cm-md-strong {
+  color: var(--md-head);
+}
+
+.cm-md-link {
+  color: var(--md-link);
+}
+
+.cm-md-inline-code {
+  background: var(--md-inline-bg);
+  color: var(--md-inline-fg);
+}
+
+.cm-md-quote {
+  background: var(--md-quote-bg);
+  color: var(--md-muted);
+  box-shadow: inset var(--md-quote-bar) 0 var(--md-accent);
+  padding-left: calc(var(--md-quote-bar) + 8px);
+}
+
+.cm-md-codeblock,
+.cm-md-codeblock-active {
+  background: var(--md-code-bg);
+  color: var(--md-code-fg);
+}
+
+.cm-md-code-head {
+  color: var(--md-muted);
+  border-bottom: 1px solid var(--md-code-border);
+}
+
+.cm-md-code-copy {
+  color: var(--md-muted);
+}
+
+.cm-md-code-copy:hover {
+  background: var(--md-inline-bg);
+  color: var(--md-head);
+}
+
+.cm-md-table-wrap {
+  border-color: var(--md-border);
+  background: transparent;
+}
+
+.cm-md-table-bar {
+  color: var(--md-muted);
+  border-bottom-color: var(--md-border);
+}
+
+.cm-md-table th,
+.cm-md-table td {
+  border-color: var(--md-border);
+  border-right-width: var(--md-table-vborder);
+}
+
+.cm-md-table th {
+  background: var(--md-table-head-bg);
+  color: var(--md-head);
+}
+
+.cm-md-table tbody tr:nth-child(even) td {
+  background: var(--md-table-stripe);
+}
+
+.cm-md-table-edit {
+  border-color: var(--md-border);
+  color: var(--md-muted);
+}
+
+.cm-md-table-edit:hover {
+  color: var(--md-accent);
+  border-color: var(--md-accent);
+}
+
+.cm-md-image img {
+  border-radius: var(--md-image-radius);
+  border-color: var(--md-border);
+}
+
+.cm-md-mermaid {
+  border-color: var(--md-border);
+}
+
+/* ---------- 设置里的主题卡片 ---------- */
+
+.md-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 10px 0 4px;
+}
+
+.md-theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.md-theme-card:hover {
+  border-color: var(--accent);
+}
+
+.md-theme-card.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-2));
+}
+
+.md-theme-card .mdt-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.md-theme-card .mdt-desc {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+
+.md-theme-card .mdt-swatches {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.md-theme-card .mdt-swatches i {
+  width: 18px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(127, 127, 127, 0.35);
+}
+
+.md-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.md-custom-row code {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--fg);
+}

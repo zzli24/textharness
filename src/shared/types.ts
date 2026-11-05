@@ -3,6 +3,8 @@ export type Eol = 'LF' | 'CRLF'
 
 export type ReasoningLevel = 'auto' | 'low' | 'medium' | 'high'
 
+export type MdThemeId = 'github' | 'bear' | 'typo' | 'vue' | 'solarized' | 'dracula' | 'custom'
+
 export interface AppConfig {
   /** 工作根目录 */
   workspaceRoot: string
@@ -33,6 +35,8 @@ export interface AppConfig {
   toolCap: number
   /** 外部 MCP 服务器，默认空 = 未配置 */
   mcpServers: McpServerConfig[]
+  /** Markdown 渲染主题：github / bear / typo / vue / solarized / dracula / custom */
+  mdTheme: MdThemeId
   /** Markdown 即时渲染（Typora 风格）：默认开启 */
   liveMarkdown: boolean
   /** 编辑器字号（Ctrl + 滚轮调整） */
