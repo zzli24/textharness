@@ -217,6 +217,47 @@ console.log('5) 401 不重试')
   check('错误被翻译成人话', /鉴权失败/.test(error), error.slice(0, 40))
 }
 
+/* ---------------- 6. 模型不认 max_tokens 时自动换字段 ---------------- */
+console.log('6) 参数兼容：max_tokens → max_completion_tokens')
+{
+  const bodies = []
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    if (bodies.length === 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    return sseResponse(textRound('换字段后成功'))
+  }
+
+  let text = ''
+  const result = await runAgent(
+    baseOptions({
+      cfg: { ...cfg, llmModel: 'relay-model-x' },
+      events: {
+        onDelta: (kind, delta) => {
+          if (kind === 'content') text += delta
+        },
+        onTool: () => {},
+      },
+    })
+  )
+  check('第一次带的是 max_tokens', 'max_tokens' in bodies[0], JSON.stringify(Object.keys(bodies[0] ?? {})))
+  check(
+    '第二次改成 max_completion_tokens',
+    bodies[1] && 'max_completion_tokens' in bodies[1] && !('max_tokens' in bodies[1]),
+    JSON.stringify(Object.keys(bodies[1] ?? {}))
+  )
+  check('最终拿到回答', result.steps === 1 && text === '换字段后成功', text)
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('')
 if (failures.length > 0) {

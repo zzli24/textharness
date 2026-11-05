@@ -3,6 +3,7 @@ import { resolveModel } from './llm'
 import { TOOL_DEFS, buildSystemPrompt, runTool, type ToolContext } from './tools'
 import { callMcpTool, isMcpTool, mcpNeedsConfirm, mcpToolDefs } from './mcp'
 import { explainHttpError, fetchWithRetry } from './http'
+import { noteParamError, tokenParams } from './modelParams'
 import { trace } from './logger'
 import type { MessageContent } from '@shared/types'
 
@@ -77,44 +78,57 @@ async function streamRound(
   onDelta: AgentEvents['onDelta'],
   events: AgentEvents
 ): Promise<RoundResult> {
-  const body = JSON.stringify({
-    model: model.model,
-    messages,
-    tools,
-    tool_choice: 'auto',
-    stream: true,
-    max_tokens: 4096,
-    temperature: 0.2,
-    // 让服务端在流的最后一个 chunk 里带上 usage（DeepSeek/OpenAI 兼容）
-    stream_options: { include_usage: true },
-    // 只有用户显式选了推理等级才带这个字段：
-    // 部分中转/厂商不支持时会因为未知参数直接 400
-    ...(model.reasoning && model.reasoning !== 'auto' ? { reasoning_effort: model.reasoning } : {}),
-  })
+  let res: Response | null = null
+  let lastError: unknown = null
 
-  let res: Response
-  try {
-    res = await fetchWithRetry(
-      `${model.baseURL}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${model.apiKey}`,
+  // o 系列 / gpt-5 这类模型不认 max_tokens，也拒绝自定义 temperature：
+  // 第一次按猜测发，报错后按报文纠正再发一次（结论会记在内存里）
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const body = JSON.stringify({
+      model: model.model,
+      messages,
+      tools,
+      tool_choice: 'auto',
+      stream: true,
+      ...tokenParams(model.model, 4096),
+      // 让服务端在流的最后一个 chunk 里带上 usage（DeepSeek/OpenAI 兼容）
+      stream_options: { include_usage: true },
+      // 只有用户显式选了推理等级才带这个字段：
+      // 部分中转/厂商不支持时会因为未知参数直接 400
+      ...(model.reasoning && model.reasoning !== 'auto' ? { reasoning_effort: model.reasoning } : {}),
+    })
+
+    try {
+      res = await fetchWithRetry(
+        `${model.baseURL}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${model.apiKey}`,
+          },
+          body,
         },
-        body,
-      },
-      {
-        signal,
-        retries: 2,
-        timeoutMs: 180_000,
-        onRetry: (attempt, reason) => events.onRetry?.(attempt, reason),
+        {
+          signal,
+          retries: 2,
+          timeoutMs: 180_000,
+          onRetry: (retry, reason) => events.onRetry?.(retry, reason),
+        }
+      )
+      break
+    } catch (err) {
+      lastError = err
+      const message = err instanceof Error ? err.message : String(err)
+      if (attempt === 0 && noteParamError(model.model, message)) {
+        trace(`模型参数不兼容，换字段重试：${message.slice(0, 140)}`)
+        continue
       }
-    )
-  } catch (err) {
-    throw new Error(explainHttpError(err))
+      throw new Error(explainHttpError(err))
+    }
   }
 
+  if (!res) throw new Error(explainHttpError(lastError))
   if (!res.body) throw new Error('模型接口没有返回数据流')
 
   const reader = res.body.getReader()

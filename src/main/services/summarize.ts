@@ -1,6 +1,7 @@
 import type { AppConfig } from '@shared/types'
 import { resolveModel } from './llm'
 import { fetchWithRetry } from './http'
+import { noteParamError, tokenParams } from './modelParams'
 
 /**
  * 归档前的「总结」：把一段对话/选区压成可直接进知识库的 markdown 章节。
@@ -19,39 +20,69 @@ const SYSTEM = [
   '5. 直接输出 markdown 正文，不要用 ``` 包裹整段。',
 ].join('\n')
 
+/**
+ * 非流式调用一次，返回正文。
+ *
+ * 参数名差异（max_tokens vs max_completion_tokens、temperature 不被接受）
+ * 统一交给 modelParams 处理：第一次按猜测发，报错后按报文纠正再发一次。
+ */
+async function chatOnce(
+  model: { baseURL: string; model: string; apiKey: string },
+  system: string,
+  user: string,
+  maxTokens: number,
+  label: string,
+  timeoutMs: number
+): Promise<string> {
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const body = JSON.stringify({
+      model: model.model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      ...tokenParams(model.model, maxTokens),
+      stream: false,
+    })
+
+    try {
+      const response = await fetchWithRetry(
+        `${model.baseURL}/chat/completions`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
+          body,
+        },
+        { retries: 2, timeoutMs }
+      )
+
+      const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
+      const content = data.choices?.[0]?.message?.content?.trim() ?? ''
+      if (!content) throw new Error('模型没有返回内容')
+      return content
+    } catch (err) {
+      lastError = err
+      const message = err instanceof Error ? err.message : String(err)
+      if (attempt === 0 && noteParamError(model.model, message)) continue
+      throw new Error(`${label}失败：${message.slice(0, 300)}`)
+    }
+  }
+
+  throw new Error(`${label}失败：${lastError instanceof Error ? lastError.message : String(lastError)}`)
+}
+
 export async function summarizeForArchive(cfg: AppConfig, input: string, title: string): Promise<string> {
   const model = resolveModel(cfg)
-  const body = {
-    model: model.model,
-    messages: [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: `标题：${title}\n\n原始内容：\n${input.slice(0, 20_000)}` },
-    ],
-    temperature: 0.2,
-    max_tokens: 1200,
-    stream: false,
-  }
-
-  const response = await fetchWithRetry(`${model.baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${model.apiKey}`,
-    },
-    body: JSON.stringify(body),
-  }, { retries: 2, timeoutMs: 120_000 })
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`总结失败（HTTP ${response.status}）：${text.slice(0, 200)}`)
-  }
-
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = data.choices?.[0]?.message?.content?.trim() ?? ''
-  if (!content) throw new Error('模型没有返回内容')
-  return content
+  return chatOnce(
+    model,
+    SYSTEM,
+    `标题：${title}\n\n原始内容：\n${input.slice(0, 20_000)}`,
+    1200,
+    '总结',
+    120_000
+  )
 }
 
 /**
@@ -75,31 +106,12 @@ export async function reorganizeForMerge(
     '5. 直接输出整篇 markdown 正文，不要用代码围栏把整篇包起来。',
   ].join('\n')
 
-  const body = {
-    model: model.model,
-    messages: [
-      { role: 'system', content: system },
-      {
-        role: 'user',
-        content: `标题：${title}\n\n【已有笔记】\n${existing.slice(0, 18000)}\n\n【要并入的新内容】\n${addition.slice(0, 8000)}`,
-      },
-    ],
-    temperature: 0.2,
-    max_tokens: 4000,
-    stream: false,
-  }
-
-  const response = await fetchWithRetry(`${model.baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
-    body: JSON.stringify(body),
-  }, { retries: 2, timeoutMs: 180_000 })
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(`重组失败（HTTP ${response.status}）：${text.slice(0, 200)}`)
-  }
-  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  const content = data.choices?.[0]?.message?.content?.trim() ?? ''
-  if (!content) throw new Error('模型没有返回内容')
-  return content
+  return chatOnce(
+    model,
+    system,
+    `标题：${title}\n\n【已有笔记】\n${existing.slice(0, 18000)}\n\n【要并入的新内容】\n${addition.slice(0, 8000)}`,
+    4000,
+    '重组',
+    180_000
+  )
 }

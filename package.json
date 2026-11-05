@@ -15,6 +15,7 @@
     "test:session-images": "node scripts/test-session-images.mjs",
     "test:markdown": "node scripts/test-markdown.mjs",
     "test:grid": "node scripts/test-grid.mjs",
+    "test:modelparams": "node scripts/test-modelparams.mjs",
     "start": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --win dir",
     "dist": "electron-vite build && electron-builder --win nsis",
