@@ -18,11 +18,14 @@ export interface ModelParams {
   tokenField: TokenField
   /** 能不能带 temperature */
   temperature: boolean
+  /** 能不能带 reasoning_effort（有的模型带工具时不支持） */
+  reasoning: boolean
 }
 
 interface Override {
   tokenField?: TokenField
   temperature?: boolean
+  reasoning?: boolean
 }
 
 const overrides = new Map<string, Override>()
@@ -34,6 +37,7 @@ function guess(model: string): ModelParams {
   return {
     tokenField: modern ? 'max_completion_tokens' : 'max_tokens',
     temperature: !modern,
+    reasoning: true,
   }
 }
 
@@ -71,6 +75,17 @@ export function noteParamError(model: string, message: string): boolean {
     saved.temperature !== false
   ) {
     overrides.set(model, { ...saved, temperature: false })
+    return true
+  }
+
+  // reasoning_effort：有的模型 / 有的中转带工具时直接拒绝
+  // 例：Function tools with reasoning_effort are not supported for gpt-6-sol ...
+  if (
+    text.includes('reasoning_effort') &&
+    /(unsupported|not supported|not allowed|invalid)/.test(text) &&
+    saved.reasoning !== false
+  ) {
+    overrides.set(model, { ...saved, reasoning: false })
     return true
   }
 

@@ -81,6 +81,14 @@ const reversed =
 check('识别反向报文', noteParamError('relay-e', reversed) === true)
 check('反向报文后改用 max_tokens', tokenParams('relay-e', 64).max_tokens === 64)
 
+/* reasoning_effort：带工具时被拒（gpt-6-sol 等） */
+const msgReasoning =
+  'Function tools with reasoning_effort are not supported for gpt-6-sol in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to \'none\'.'
+check('识别 reasoning_effort 报错', noteParamError('gpt-6-sol', msgReasoning) === true)
+check('学会后不再带 reasoning_effort', paramsFor('gpt-6-sol').reasoning === false)
+check('其它模型仍允许 reasoning_effort', paramsFor('deepseek-reasoner').reasoning === true)
+
+resetParamOverrides()
 resetParamOverrides()
 check('重置后回到初判', paramsFor('relay-a').tokenField === 'max_tokens')
 

@@ -3,7 +3,7 @@ import { resolveModel } from './llm'
 import { TOOL_DEFS, buildSystemPrompt, runTool, type ToolContext } from './tools'
 import { callMcpTool, isMcpTool, mcpNeedsConfirm, mcpToolDefs } from './mcp'
 import { explainHttpError, fetchWithRetry } from './http'
-import { noteParamError, tokenParams } from './modelParams'
+import { noteParamError, paramsFor, tokenParams } from './modelParams'
 import { trace } from './logger'
 import type { MessageContent } from '@shared/types'
 
@@ -84,6 +84,7 @@ async function streamRound(
   // o 系列 / gpt-5 这类模型不认 max_tokens，也拒绝自定义 temperature：
   // 第一次按猜测发，报错后按报文纠正再发一次（结论会记在内存里）
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const params = paramsFor(model.model)
     const body = JSON.stringify({
       model: model.model,
       messages,
@@ -94,8 +95,10 @@ async function streamRound(
       // 让服务端在流的最后一个 chunk 里带上 usage（DeepSeek/OpenAI 兼容）
       stream_options: { include_usage: true },
       // 只有用户显式选了推理等级才带这个字段：
-      // 部分中转/厂商不支持时会因为未知参数直接 400
-      ...(model.reasoning && model.reasoning !== 'auto' ? { reasoning_effort: model.reasoning } : {}),
+      // 部分中转/厂商不支持时会因为未知参数直接 400（带工具时尤其常见）
+      ...(params.reasoning && model.reasoning && model.reasoning !== 'auto'
+        ? { reasoning_effort: model.reasoning }
+        : {}),
     })
 
     try {

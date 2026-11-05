@@ -258,6 +258,45 @@ console.log('6) 参数兼容：max_tokens → max_completion_tokens')
   check('最终拿到回答', result.steps === 1 && text === '换字段后成功', text)
 }
 
+/* ---------------- 7. 模型带工具时不接受 reasoning_effort ---------------- */
+console.log('7) 参数兼容：reasoning_effort 被拒后去掉')
+{
+  const bodies = []
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    if (bodies.length === 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "Function tools with reasoning_effort are not supported for gpt-6-sol in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'.",
+            type: 'invalid_request_error',
+            param: 'reasoning_effort',
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } }
+      )
+    }
+    return sseResponse(textRound('去掉 reasoning_effort 后成功'))
+  }
+
+  let text = ''
+  const result = await runAgent(
+    baseOptions({
+      cfg: { ...cfg, llmModel: 'gpt-6-sol', llmReasoning: 'low' },
+      events: {
+        onDelta: (kind, delta) => {
+          if (kind === 'content') text += delta
+        },
+        onTool: () => {},
+      },
+    })
+  )
+  check('第一次带了 reasoning_effort', 'reasoning_effort' in bodies[0], JSON.stringify(Object.keys(bodies[0] ?? {})))
+  check('第二次不再带 reasoning_effort', bodies[1] && !('reasoning_effort' in bodies[1]), JSON.stringify(Object.keys(bodies[1] ?? {})))
+  check('最终成功', result.steps === 1 && text === '去掉 reasoning_effort 后成功', text)
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('')
 if (failures.length > 0) {
