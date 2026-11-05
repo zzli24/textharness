@@ -99,7 +99,7 @@ function guard(path: string): string {
 
 export interface UpdateBridge {
   checkUpdateNow(): Promise<void>
-  quitAndInstallUpdate(): void
+  quitAndInstallUpdate(): { ok: boolean; reason?: string }
   updateFeed(): string
 }
 
@@ -173,7 +173,7 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   // 记忆 / MCP 的 handler 在 ipcServices.ts 里注册
   registerServiceIpc()
   const checkUpdateNow = deps.checkUpdateNow ?? (async () => undefined)
-  const quitAndInstallUpdate = deps.quitAndInstallUpdate ?? (() => undefined)
+  const quitAndInstallUpdate = deps.quitAndInstallUpdate ?? (() => ({ ok: false, reason: '更新模块未初始化' }))
   const updateFeed = deps.updateFeed ?? (() => '')
 
   /* ---------- 配置 ---------- */

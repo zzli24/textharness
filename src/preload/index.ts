@@ -221,7 +221,7 @@ const api = {
     replyConfirm: (id: string, index: number) => ipcRenderer.send('ui:confirm:reply', { id, index }),
     openUrl: (url: string) => ipcRenderer.invoke('app:openUrl', url) as Promise<void>,
     updateCheck: () => ipcRenderer.invoke('update:check') as Promise<void>,
-    updateInstall: () => ipcRenderer.invoke('update:install') as Promise<void>,
+    updateInstall: () => ipcRenderer.invoke('update:install') as Promise<{ ok: boolean; reason?: string }>,
     updateFeed: () => ipcRenderer.invoke('update:feed') as Promise<string>,
     onUpdateEvent: (cb: (event: UpdateEvent) => void) => {
       ipcRenderer.on('update:event', (_event, payload: UpdateEvent) => cb(payload))

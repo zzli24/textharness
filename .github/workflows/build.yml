@@ -39,6 +39,9 @@ jobs:
       - name: Chat URL tests
         run: node scripts/test-chaturl.mjs
 
+      - name: Update chip tests
+        run: node scripts/test-updatechip.mjs
+
       - name: Build renderer/main
         run: npm run build
 
@@ -103,6 +106,9 @@ jobs:
 
       - name: Chat URL tests
         run: node scripts/test-chaturl.mjs
+
+      - name: Update chip tests
+        run: node scripts/test-updatechip.mjs
 
       - name: Build renderer/main
         run: npm run build

@@ -190,7 +190,7 @@ export interface ThApi {
     replyConfirm(id: string, index: number): void
     openUrl(url: string): Promise<void>
     updateCheck(): Promise<void>
-    updateInstall(): Promise<void>
+    updateInstall(): Promise<{ ok: boolean; reason?: string }>
     updateFeed(): Promise<string>
     onUpdateEvent(cb: (event: UpdateEvent) => void): void
     onScriptApproval(cb: (request: ScriptRequest) => void): void

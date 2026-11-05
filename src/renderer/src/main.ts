@@ -24,6 +24,7 @@ import { requestAccess, requestScriptApproval } from './approval'
 import { describeChange } from './recipes'
 import { closeToolsPanel, openToolsPanel } from './toolsPanel'
 import { createGrid, detectDelimiter, markdownToRows, rowsToMarkdown, type GridApi } from './gridView'
+import { applyStall, applyUpdateEvent, chipAction, DOWNLOAD_PAGE, initialChip, type ChipState } from './updateChip'
 import { createChat, type ChatApi } from './aiChat'
 
 /* ------------------------------------------------------------------ */
@@ -64,32 +65,42 @@ function errorMessage(err: unknown): string {
 }
 
 let toastTimer: number | undefined
-/** 状态栏的更新芯片：有新版才出现，点一下下载/安装/去官网 */
+/** 状态栏的更新芯片：有新版才出现；任何状态下点击都有明确动作 */
 function setupUpdater(): void {
   const chip = document.getElementById('st-update') as HTMLButtonElement | null
   const label = document.getElementById('st-update-text')
   if (!chip || !label) return
 
-  let mode: 'none' | 'available' | 'downloading' | 'ready' | 'manual' = 'none'
-  let targetUrl = ''
+  let state: ChipState = initialChip()
 
-  const show = (text: string, title: string): void => {
-    label.textContent = text
-    chip.title = title
-    chip.classList.remove('hidden')
+  const paint = (): void => {
+    label.textContent = state.label
+    chip.title = state.title
+    chip.classList.toggle('hidden', !state.visible)
+  }
+
+  const openDownload = (): void => {
+    void window.th.app.openUrl(state.url || DOWNLOAD_PAGE)
   }
 
   chip.addEventListener('click', () => {
-    if (mode === 'ready') {
-      void window.th.ai.updateInstall()
+    const action = chipAction(state)
+    if (action === 'install') {
+      // 安装可能起不来（包被清理、被安全软件拦住），失败就退到下载页
+      void window.th.ai.updateInstall().then((result) => {
+        if (result.ok) return
+        toast(`安装没启动：${result.reason ?? '未知原因'}，已打开下载页`)
+        openDownload()
+      })
       return
     }
-    if (mode === 'manual' && targetUrl) {
-      void window.th.app.openUrl(targetUrl)
-      return
-    }
-    if (mode === 'available' || mode === 'downloading') {
-      toast('正在后台下载更新，完成后这里会提示重启')
+    if (action === 'open-download') {
+      toast(
+        state.mode === 'available' || state.mode === 'downloading'
+          ? '后台还在下载；已打开下载页，也可以直接手动安装'
+          : '已打开下载页'
+      )
+      openDownload()
       return
     }
     void window.th.ai.updateCheck()
@@ -97,34 +108,20 @@ function setupUpdater(): void {
   })
 
   window.th.ai.onUpdateEvent((event) => {
-    switch (event.kind) {
-      case 'checking':
-        break
-      case 'available':
-        mode = 'available'
-        show(`新版本 v${event.version}`, `正在后台下载 v${event.version}`)
-        break
-      case 'progress':
-        mode = 'downloading'
-        show(`下载中 ${event.percent}%`, '更新包下载中')
-        break
-      case 'downloaded':
-        mode = 'ready'
-        show(`重启更新 v${event.version}`, '点一下重启并安装，用户数据不受影响')
-        toast(`v${event.version} 已下载，点状态栏「重启更新」即可`)
-        break
-      case 'manual':
-        mode = 'manual'
-        targetUrl = event.url
-        show(`新版本 v${event.version}`, '未签名的 macOS 版需要手动下载：点这里打开下载页')
-        break
-      case 'error':
-        break
-      case 'none':
-        if (mode === 'none') chip.classList.add('hidden')
-        break
-    }
+    state = applyUpdateEvent(state, event)
+    paint()
+    if (event.kind === 'downloaded') toast(`v${event.version} 已下载，点状态栏「重启更新」即可`)
+    if (event.kind === 'error') toast(`自动更新失败：${event.message}`)
   })
+
+  // 下载长时间没进展 → 给一个手动下载的出口，别让用户点了没反应
+  window.setInterval(() => {
+    const next = applyStall(state)
+    if (next !== state) {
+      state = next
+      paint()
+    }
+  }, 5000)
 }
 
 function toast(message: string): void {

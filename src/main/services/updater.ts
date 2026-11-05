@@ -157,13 +157,22 @@ export async function checkNow(): Promise<void> {
   }
 }
 
-export function quitAndInstall(): void {
-  if (process.platform === 'darwin') return
+export interface InstallResult {
+  ok: boolean
+  reason?: string
+}
+
+export function quitAndInstall(): InstallResult {
+  if (process.platform === 'darwin') {
+    return { ok: false, reason: 'macOS 需要手动下载安装包' }
+  }
   try {
     // isSilent=false：让安装器显示进度；isForceRunAfter=true：装完自动打开
     getAutoUpdater().quitAndInstall(false, true)
+    return { ok: true }
   } catch (err) {
     trace(`update install failed: ${String(err)}`)
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
   }
 }
 
