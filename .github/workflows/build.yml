@@ -47,7 +47,11 @@ jobs:
 
       # identity:null —— 没证书也能出包，只是 Gatekeeper 会拦
       - name: Package macOS
-        run: npx electron-builder --mac --x64 --arm64 --publish never
+        # 两种架构分两次打包：同时跑会抢 dmgbuild 的锁，偶发
+        # "Lock file is already being held"（0.4.8 构建就是栽在这）
+        run: |
+          npx electron-builder --mac --x64 --publish never
+          npx electron-builder --mac --arm64 --publish never
         env:
           # 没配这些 Secrets 时为空字符串：after-sign 钩子会自动跳过公证
           CSC_LINK: ${{ secrets.CSC_LINK }}
