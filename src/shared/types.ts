@@ -37,6 +37,8 @@ export interface AppConfig {
   mcpServers: McpServerConfig[]
   /** Markdown 渲染主题：github / bear / typo / vue / solarized / dracula / custom */
   mdTheme: MdThemeId
+  /** 即时渲染时是否显示行号：默认关，排版更干净 */
+  mdLineNumbers: boolean
   /** Markdown 即时渲染（Typora 风格）：默认开启 */
   liveMarkdown: boolean
   /** 编辑器字号（Ctrl + 滚轮调整） */

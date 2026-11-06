@@ -2477,6 +2477,7 @@ function updateMdLiveClass(): void {
   if (!host) return
   const on = !!doc && doc.kind === 'text' && !doc.srcView && docIsMarkdown(doc) && cfg.liveMarkdown !== false
   host.classList.toggle('md-live', on)
+  host.classList.toggle('md-gutter', on && cfg.mdLineNumbers === true)
 }
 
 async function openSettingsFlow(): Promise<void> {

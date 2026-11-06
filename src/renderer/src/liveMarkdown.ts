@@ -56,20 +56,22 @@ function selectionTouchesLine(state: EditorState, lineFrom: number, lineTo: numb
 class CodeHeaderWidget extends WidgetType {
   constructor(
     readonly lang: string,
-    readonly code: string
+    readonly code: string,
+    readonly hasCode: boolean
   ) {
     super()
   }
 
   eq(other: CodeHeaderWidget): boolean {
-    return other.lang === this.lang && other.code === this.code
+    return other.lang === this.lang && other.code === this.code && other.hasCode === this.hasCode
   }
 
   toDOM(): HTMLElement {
     const head = document.createElement('div')
-    head.className = 'cm-md-code-head'
+    head.className = this.hasCode ? 'cm-md-code-head' : 'cm-md-code-head cm-md-code-head-only'
     const name = document.createElement('span')
-    name.textContent = this.lang ? this.lang.toUpperCase() : '代码块'
+    name.className = 'cm-md-code-lang'
+    name.textContent = this.lang ? this.lang.toUpperCase() : 'CODE'
     const copy = document.createElement('button')
     copy.type = 'button'
     copy.className = 'cm-md-code-copy'
@@ -354,15 +356,30 @@ function buildDecorations(state: EditorState): DecorationSet {
           i = close + 1
           continue
         }
-        // 头部：语言 + 复制
-        push(line.from, line.to, Decoration.replace({ widget: new CodeHeaderWidget(lang, code), block: true }))
+        // 头部：语言 + 复制（作为卡片顶栏）
+        const hasCode = close > i + 1
+        push(line.from, line.from, Decoration.line({ class: 'cm-md-code-head-line' }))
+        push(
+          line.from,
+          line.to,
+          Decoration.replace({
+            widget: new CodeHeaderWidget(lang, code, hasCode),
+            block: true,
+          })
+        )
         if (close > i && close <= doc.lines) {
           const closeLine = doc.line(close)
           push(closeLine.from, closeLine.to, Decoration.replace({}))
+          push(closeLine.from, closeLine.from, Decoration.line({ class: 'cm-md-code-close' }))
         }
-        for (let k = i + 1; k < close; k += 1) {
+        const firstCode = i + 1
+        const lastCode = close - 1
+        for (let k = firstCode; k <= lastCode; k += 1) {
           const codeLine = doc.line(k)
-          push(codeLine.from, codeLine.from, Decoration.line({ class: 'cm-md-codeblock' }))
+          const classes = ['cm-md-codeblock']
+          if (k === firstCode) classes.push('cm-md-code-first')
+          if (k === lastCode) classes.push('cm-md-code-last')
+          push(codeLine.from, codeLine.from, Decoration.line({ class: classes.join(' ') }))
         }
         i = close + 1
         continue
@@ -463,7 +480,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   out.sort((a, b) => a.from - b.from || a.to - b.to)
   return Decoration.set(
     out.map((item) => item.deco.range(item.from, item.to)),
-    false
+    true
   )
 }
 

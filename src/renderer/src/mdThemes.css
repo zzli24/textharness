@@ -393,6 +393,10 @@ html[data-md-theme='dracula'][data-theme='dark'] {
 .cm-md-inline-code {
   background: var(--md-inline-bg);
   color: var(--md-inline-fg);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 0.9em;
+  font-family: 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
 }
 
 .cm-md-quote {
@@ -402,68 +406,138 @@ html[data-md-theme='dracula'][data-theme='dark'] {
   padding-left: calc(var(--md-quote-bar) + 8px);
 }
 
+/* 代码块：卡片式外观（顶栏 + 代码区） */
+
+.cm-md-code-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--md-code-bg);
+  border: 1px solid var(--md-code-border);
+  border-bottom: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  color: var(--md-muted);
+  font-family: var(--md-font);
+  font-size: 11px;
+  line-height: 1.6;
+  transition: border-color 0.15s ease;
+}
+
+.cm-md-code-head .cm-md-code-lang,
+.cm-md-code-head .cm-md-code-copy {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.cm-md-code-head:hover,
+.cm-md-code-head:focus-within {
+  border-bottom-color: var(--md-code-border);
+}
+
+/* 头部占固定高度：内容隐藏/出现时卡片不跳动 */
+#editor-host.md-live .cm-md-code-head-line {
+  height: 34px !important;
+  min-height: 34px !important;
+}
+
+.cm-md-code-head:hover .cm-md-code-lang,
+.cm-md-code-head:hover .cm-md-code-copy,
+.cm-md-code-head:focus-within .cm-md-code-lang,
+.cm-md-code-head:focus-within .cm-md-code-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 空代码块没有内容可悬停，始终显示顶栏 */
+.cm-md-code-head-only .cm-md-code-lang,
+.cm-md-code-head-only .cm-md-code-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cm-md-code-head-only {
+  border-bottom: 1px solid var(--md-code-border);
+  border-radius: 8px;
+}
+
+/* 闭合围栏行本身不显示内容，把它的行高折叠掉，避免卡片下方多出一条空白 */
+.cm-md-code-close {
+  height: 0 !important;
+  min-height: 0 !important;
+  line-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.cm-md-code-lang {
+  font-family: 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cm-md-code-copy {
+  margin-left: auto;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--md-muted);
+  font: inherit;
+  padding: 1px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.cm-md-code-copy:hover {
+  opacity: 1;
+  background: var(--md-inline-bg);
+  border-color: var(--md-border);
+  color: var(--md-head);
+}
+
 .cm-md-codeblock,
 .cm-md-codeblock-active {
   background: var(--md-code-bg);
   color: var(--md-code-fg);
+  border-left: 1px solid var(--md-code-border);
+  border-right: 1px solid var(--md-code-border);
+  font-family: 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+  font-size: 0.95em;
+  line-height: 1.9;
 }
 
-.cm-md-code-head {
-  color: var(--md-muted);
+/* 即时渲染默认藏掉行号（像 Typora），设置里可以打开 */
+#editor-host.md-live:not(.md-gutter) .cm-gutters {
+  display: none;
+}
+
+/* 打开行号时，闭合围栏行恢复正常高度，避免行号重叠 */
+#editor-host.md-live.md-gutter .cm-md-code-close {
+  height: 1.6em !important;
+  line-height: 1.6em !important;
+}
+
+/* CM 主题会给 .cm-line 设 padding，这里用 ID 选择器统一卡片内边距 */
+#editor-host.md-live .cm-md-codeblock,
+#editor-host.md-live .cm-md-codeblock-active {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.cm-md-codeblock-active {
+  border-radius: 8px;
+}
+
+.cm-md-code-first {
+  padding-top: 8px;
+}
+
+.cm-md-code-last {
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--md-code-border);
-}
-
-.cm-md-code-copy {
-  color: var(--md-muted);
-}
-
-.cm-md-code-copy:hover {
-  background: var(--md-inline-bg);
-  color: var(--md-head);
-}
-
-.cm-md-table-wrap {
-  border-color: var(--md-border);
-  background: transparent;
-}
-
-.cm-md-table-bar {
-  color: var(--md-muted);
-  border-bottom-color: var(--md-border);
-}
-
-.cm-md-table th,
-.cm-md-table td {
-  border-color: var(--md-border);
-  border-right-width: var(--md-table-vborder);
-}
-
-.cm-md-table th {
-  background: var(--md-table-head-bg);
-  color: var(--md-head);
-}
-
-.cm-md-table tbody tr:nth-child(even) td {
-  background: var(--md-table-stripe);
-}
-
-.cm-md-table-edit {
-  border-color: var(--md-border);
-  color: var(--md-muted);
-}
-
-.cm-md-table-edit:hover {
-  color: var(--md-accent);
-  border-color: var(--md-accent);
-}
-
-.cm-md-image img {
-  border-radius: var(--md-image-radius);
-  border-color: var(--md-border);
-}
-
-.cm-md-mermaid {
-  border-color: var(--md-border);
+  border-radius: 0 0 8px 8px;
 }
 
 /* ---------- 设置里的主题卡片 ---------- */

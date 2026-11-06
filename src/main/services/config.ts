@@ -54,6 +54,7 @@ function defaults(): AppConfig {
     editorFontSize: 13,
     liveMarkdown: true,
     mdTheme: 'github',
+    mdLineNumbers: false,
     memorySemantic: false,
     bgImage: '',
     bgPreset: 0,
@@ -94,6 +95,7 @@ export function loadConfig(): AppConfig {
   if (!Array.isArray(cfg.enabledTools)) cfg.enabledTools = []
   if (!cfg.providerProfiles || typeof cfg.providerProfiles !== 'object') cfg.providerProfiles = {}
   if (typeof cfg.memorySemantic !== 'boolean') cfg.memorySemantic = false
+  if (typeof cfg.mdLineNumbers !== 'boolean') cfg.mdLineNumbers = false
   if (!['github', 'bear', 'typo', 'vue', 'solarized', 'dracula', 'custom'].includes(cfg.mdTheme)) {
     cfg.mdTheme = 'github'
   }

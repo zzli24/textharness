@@ -295,6 +295,7 @@ export async function openSettings(current: AppConfig): Promise<AppConfig | null
     let workspaceRoot = current.workspaceRoot
     let defaultEncoding = current.defaultEncoding
     let mdTheme = current.mdTheme ?? 'github'
+let mdLineNumbers = current.mdLineNumbers === true
 let theme = current.theme
     let bgImage = current.bgImage
     let bgPreset = current.bgPreset ?? 0
@@ -665,6 +666,19 @@ let theme = current.theme
       hint.textContent = '选「自定义 CSS」后生效；变量名见文件内注释。'
       mdCustomRow.append(pathCode, createBtn, reloadBtn, hint)
       pane.appendChild(mdCustomRow)
+
+      const lineNumberRow = document.createElement('label')
+      lineNumberRow.className = 'md-custom-row'
+      const lineNumberBox = document.createElement('input')
+      lineNumberBox.type = 'checkbox'
+      lineNumberBox.checked = mdLineNumbers
+      lineNumberBox.addEventListener('change', () => {
+        mdLineNumbers = lineNumberBox.checked
+      })
+      const lineNumberText = document.createElement('span')
+      lineNumberText.textContent = '即时渲染时显示行号（默认关，关掉排版更干净）'
+      lineNumberRow.append(lineNumberBox, lineNumberText)
+      pane.appendChild(lineNumberRow)
 
       const MD_CSS_TEMPLATE = `/* TextHarness 自定义 Markdown 渲染样式
  * 在 设置 → 外观 → Markdown 渲染 里选「自定义 CSS」后生效。
@@ -1705,6 +1719,7 @@ html[data-md-theme='custom'][data-theme='dark'] {
         bgImage,
         bgPreset,
         mdTheme,
+        mdLineNumbers,
         bgOpacity,
         bgBlur,
         bgDim,
