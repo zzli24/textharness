@@ -8,6 +8,7 @@ import { loadEditorState, saveEditorState, type SavedEditorState } from './servi
 import { registerServiceIpc } from './ipcServices'
 import { importNotes, type ImportSource } from './services/importer'
 import { createBackup, restoreBackup } from './services/backup'
+import { getOneNoteStatus, runOneNoteExport } from './services/onenote'
 import { loadConfig, patchConfig } from './services/config'
 import { trace } from './services/logger'
 import { ensureMemoryDir, listMemoryFiles, readMemory, writeMemoryFile } from './services/memory'
@@ -762,6 +763,98 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
     } finally {
       win.destroy()
     }
+  })
+
+  ipcMain.handle('onenote:status', async () => getOneNoteStatus())
+
+  ipcMain.handle('onenote:run', async (event) => {
+    const config = loadConfig()
+    const configOnProgress = (progress: { phase: string; percent?: number; message?: string }): void => {
+      if (!event.sender.isDestroyed()) event.sender.send('onenote:progress', progress)
+    }
+    const exported = await runOneNoteExport(configOnProgress)
+    if (!exported.ok || !exported.dir) {
+      return { ok: false, imported: 0, skipped: 0, failed: 0, error: exported.error ?? '导出失败' }
+    }
+    configOnProgress({ phase: 'import', message: '正在导入到工作区…' })
+    const result = await importNotes({
+      source: 'markdown',
+      inputPath: exported.dir,
+      workspaceRoot: config.workspaceRoot,
+    })
+    return {
+      ok: result.ok,
+      imported: result.imported,
+      skipped: result.skipped,
+      failed: result.failed,
+      targetDir: result.targetDir,
+      error: result.errors[0],
+    }
+  })
+
+  ipcMain.handle('app:copyImage', async (_event, dataUrl: string) => {
+    const image = nativeImage.createFromDataURL(dataUrl)
+    if (image.isEmpty()) return { ok: false }
+    clipboard.writeImage(image)
+    return { ok: true }
+  })
+
+  ipcMain.handle('app:revealPath', async (_event, target: string) => {
+    shell.showItemInFolder(target)
+  })
+
+  ipcMain.handle('import:pick', async (_event, source: ImportSource) => {
+    const isFolder = source === 'markdown'
+    const filters =
+      source === 'enex'
+        ? [{ name: 'Evernote 导出', extensions: ['enex'] }]
+        : source === 'docx'
+          ? [{ name: 'Word 文档', extensions: ['docx'] }]
+          : source === 'html'
+            ? [{ name: '网页', extensions: ['html', 'htm'] }]
+            : source === 'zip'
+              ? [{ name: '压缩包', extensions: ['zip'] }]
+              : []
+    const picked = await dialog.showOpenDialog({
+      title: isFolder ? '选择 Markdown / Obsidian 文件夹' : '选择要导入的文件',
+      properties: isFolder ? ['openDirectory'] : ['openFile'],
+      filters: filters.length > 0 ? filters : undefined,
+    })
+    return picked.canceled || picked.filePaths.length === 0 ? null : picked.filePaths[0]
+  })
+
+  ipcMain.handle(
+    'import:run',
+    async (
+      _event,
+      options: { source: ImportSource; inputPath: string; conflict?: 'rename' | 'skip' | 'overwrite' }
+    ) => {
+      const config = loadConfig()
+      return importNotes({ ...options, workspaceRoot: config.workspaceRoot })
+    }
+  )
+
+  ipcMain.handle('backup:create', async () => {
+    const config = loadConfig()
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')
+    const picked = await dialog.showSaveDialog({
+      title: '备份工作区',
+      defaultPath: join(app.getPath('documents'), 'textharness-backup-' + stamp + '.zip'),
+      filters: [{ name: 'ZIP 备份', extensions: ['zip'] }],
+    })
+    if (picked.canceled || !picked.filePath) return { ok: false, files: 0, bytes: 0 }
+    return createBackup(config.workspaceRoot, picked.filePath)
+  })
+
+  ipcMain.handle('backup:restore', async () => {
+    const config = loadConfig()
+    const picked = await dialog.showOpenDialog({
+      title: '从备份恢复',
+      properties: ['openFile'],
+      filters: [{ name: 'ZIP 备份', extensions: ['zip'] }],
+    })
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, restored: 0, skipped: 0 }
+    return restoreBackup(picked.filePaths[0], config.workspaceRoot)
   })
 
   ipcMain.handle('app:openUrl', async (_e, url: string) => {

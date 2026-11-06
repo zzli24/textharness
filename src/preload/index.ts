@@ -262,6 +262,29 @@ const api = {
     backupRestore: () =>
       ipcRenderer.invoke('backup:restore') as Promise<{ ok: boolean; restored: number; skipped: number; error?: string }>,
     revealPath: (target: string) => ipcRenderer.invoke('app:revealPath', target) as Promise<void>,
+    oneNoteStatus: () =>
+      ipcRenderer.invoke('onenote:status') as Promise<{
+        platform: string
+        oneNoteFound: boolean
+        wordFound: boolean
+        toolInstalled: boolean
+        ready: boolean
+        reason?: string
+      }>,
+    oneNoteRun: () =>
+      ipcRenderer.invoke('onenote:run') as Promise<{
+        ok: boolean
+        imported: number
+        skipped: number
+        failed: number
+        targetDir?: string
+        error?: string
+      }>,
+    onOneNoteProgress: (cb: (progress: { phase: string; percent?: number; message?: string }) => void) => {
+      const handler = (_event: unknown, progress: { phase: string; percent?: number; message?: string }): void => cb(progress)
+      ipcRenderer.on('onenote:progress', handler)
+      return () => ipcRenderer.removeListener('onenote:progress', handler)
+    },
     copyImage: (dataUrl: string) =>
       ipcRenderer.invoke('app:copyImage', dataUrl) as Promise<{ ok: boolean }>,
     saveExport: (dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf') =>

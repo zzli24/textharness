@@ -816,12 +816,13 @@ html[data-md-theme='custom'][data-theme='dark'] {
       conflictRow.append(conflictLabel, conflictSelect)
       pane.appendChild(conflictRow)
 
-      const sources: Array<{ id: 'markdown' | 'enex' | 'docx' | 'html' | 'zip'; name: string; desc: string; icon: string }> = [
+      const sources: Array<{ id: 'markdown' | 'enex' | 'docx' | 'html' | 'zip' | 'onenote'; name: string; desc: string; icon: string }> = [
         { id: 'markdown', name: 'Markdown / Obsidian', desc: '选一个文件夹，保留目录结构和图片附件', icon: '📁' },
         { id: 'enex', name: 'Evernote', desc: '导入 .enex 导出文件，正文转 Markdown', icon: '📓' },
         { id: 'docx', name: 'Word', desc: '导入 .docx，保留标题、列表、表格', icon: '📄' },
         { id: 'zip', name: 'Notion / 压缩包', desc: '导入含 Markdown 的 .zip 导出包', icon: '🗜️' },
         { id: 'html', name: '网页 HTML', desc: '把单个 .html 转成 Markdown', icon: '🌐' },
+        { id: 'onenote', name: 'OneNote（Windows）', desc: '需 OneNote + Word 桌面版；首次自动下载导出工具', icon: '📔' },
       ]
 
       const grid = document.createElement('div')
@@ -862,9 +863,49 @@ html[data-md-theme='custom'][data-theme='dark'] {
       for (const card of cards) {
         card.addEventListener('click', () => {
           if (busy) return
-          const source = card.dataset.importSource as 'markdown' | 'enex' | 'docx' | 'html' | 'zip'
+          const source = card.dataset.importSource as 'markdown' | 'enex' | 'docx' | 'html' | 'zip' | 'onenote'
           void (async () => {
             try {
+              if (source === 'onenote') {
+                const st = await window.th.app.oneNoteStatus()
+                if (!st.ready) {
+                  status.textContent = st.reason ?? '当前环境不满足 OneNote 导出条件'
+                  return
+                }
+                setBusy(true)
+                status.textContent = st.toolInstalled ? '正在调用 OneNote 导出…' : '首次使用，正在下载导出工具（约 75MB）…'
+                const off = window.th.app.onOneNoteProgress((progress) => {
+                  if (progress.message) status.textContent = progress.message
+                })
+                try {
+                  const result = await window.th.app.oneNoteRun()
+                  if (!result.ok) {
+                    status.textContent = 'OneNote 导入失败：' + (result.error ?? '未知错误')
+                    return
+                  }
+                  status.innerHTML = ''
+                  const line = document.createElement('div')
+                  line.textContent =
+                    'OneNote 导入完成：' +
+                    result.imported +
+                    ' 篇' +
+                    (result.skipped ? '，跳过 ' + result.skipped : '') +
+                    (result.failed ? '，失败 ' + result.failed : '')
+                  const pathLine = document.createElement('div')
+                  pathLine.className = 'import-path'
+                  pathLine.textContent = result.targetDir ?? ''
+                  const open = button('打开导入目录')
+                  if (result.targetDir) {
+                    open.addEventListener('click', () => void window.th.app.revealPath(result.targetDir as string))
+                  }
+                  status.append(line, pathLine, open)
+                  document.dispatchEvent(new CustomEvent('th:refresh-tree'))
+                } finally {
+                  off()
+                  setBusy(false)
+                }
+                return
+              }
               const picked = await window.th.app.importPick(source)
               if (!picked) return
               setBusy(true)

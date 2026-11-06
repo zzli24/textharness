@@ -231,6 +231,26 @@ export interface ThApi {
     backupCreate(): Promise<{ ok: boolean; path?: string; files: number; bytes: number; error?: string }>
     /** 从 zip 备份恢复 */
     backupRestore(): Promise<{ ok: boolean; restored: number; skipped: number; error?: string }>
+    /** OneNote 导出环境状态 */
+    oneNoteStatus(): Promise<{
+      platform: string
+      oneNoteFound: boolean
+      wordFound: boolean
+      toolInstalled: boolean
+      ready: boolean
+      reason?: string
+    }>
+    /** 下载/调用 OneNote 导出工具，并把结果导入工作区 */
+    oneNoteRun(): Promise<{
+      ok: boolean
+      imported: number
+      skipped: number
+      failed: number
+      targetDir?: string
+      error?: string
+    }>
+    /** 订阅 OneNote 导出进度，返回取消订阅函数 */
+    onOneNoteProgress(cb: (progress: { phase: string; percent?: number; message?: string }) => void): () => void
     /** 在文件管理器中定位文件 */
     revealPath(target: string): Promise<void>
     /** 复制图片到系统剪贴板 */
