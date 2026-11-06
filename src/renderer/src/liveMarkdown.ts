@@ -587,14 +587,48 @@ const liveDecorationsField = StateField.define<DecorationSet>({
 export function liveMarkdownExtension(): Extension {
   return [
     liveDecorationsField,
-    // Ctrl/Cmd + 点链接：用系统浏览器打开
+    // 锚点链接：普通点击跳到对应标题；外链仍然 Ctrl/Cmd + 点击
     EditorView.domEventHandlers({
-      click: (event) => {
+      click: (event, view) => {
         const target = event.target as HTMLElement | null
         const link = target?.closest('.cm-md-link') as HTMLElement | null
-        if (!link || !(event.ctrlKey || event.metaKey)) return false
+        if (!link) return false
         const href = link.dataset['href']
         if (!href) return false
+
+        const normalize = (value: string): string =>
+          value
+            .toLowerCase()
+            .replace(/[\s\p{P}\p{S}]/gu, '')
+            .replace(/^[一二三四五六七八九十]+[、.．]?/, '')
+
+        if (href.startsWith('#')) {
+          event.preventDefault()
+          let raw = href.slice(1)
+          try {
+            raw = decodeURIComponent(raw)
+          } catch {
+            // 保留原样
+          }
+          const wanted = normalize(raw)
+          if (!wanted) return true
+          const doc = view.state.doc
+          for (let n = 1; n <= doc.lines; n += 1) {
+            const line = doc.line(n)
+            const heading = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line.text)
+            if (!heading) continue
+            if (normalize(heading[1]) === wanted || normalize(heading[1]).includes(wanted)) {
+              view.dispatch({
+                selection: { anchor: line.from },
+                effects: EditorView.scrollIntoView(line.from, { y: 'start' }),
+              })
+              return true
+            }
+          }
+          return true
+        }
+
+        if (!(event.ctrlKey || event.metaKey)) return false
         event.preventDefault()
         const api = (window as unknown as { th?: { app?: { openUrl?: (url: string) => Promise<void> } } }).th
         void api?.app?.openUrl?.(href)

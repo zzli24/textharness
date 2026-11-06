@@ -415,7 +415,7 @@ html[data-md-theme='dracula'][data-theme='dark'] {
   padding: 6px 12px;
   background: var(--md-code-bg);
   border: 1px solid var(--md-code-border);
-  border-bottom: 1px solid var(--md-code-border);
+  border-bottom: none;
   border-radius: 8px 8px 0 0;
   color: var(--md-muted);
   font-family: var(--md-font);
@@ -464,7 +464,7 @@ html[data-md-theme='dracula'][data-theme='dark'] {
 
 /* 空代码块：底边也画上，避免只剩一条线 */
 .cm-md-code-head-only {
-  border-bottom-color: var(--md-code-border);
+  border-bottom: 1px solid var(--md-code-border);
   border-radius: 8px;
 }
 

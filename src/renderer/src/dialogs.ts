@@ -681,7 +681,6 @@ let theme = current.theme
       lineNumberText.textContent = '即时渲染时显示行号（默认关，关掉排版更干净）'
       lineNumberRow.append(lineNumberBox, lineNumberText)
       mdSection.appendChild(lineNumberRow)
-      pane.appendChild(mdSection)
 
       const MD_CSS_TEMPLATE = `/* TextHarness 自定义 Markdown 渲染样式
  * 在 设置 → 外观 → Markdown 渲染 里选「自定义 CSS」后生效。
@@ -786,6 +785,8 @@ html[data-md-theme='custom'][data-theme='dark'] {
       slider('暗化', bgDim, 0, 0.85, 0.05, (v) => `${Math.round(v * 100)}%`, (v) => {
         bgDim = v
       })
+
+      pane.appendChild(mdSection)
 
       syncSwatches()
     }
