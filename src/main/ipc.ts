@@ -1,7 +1,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { AppConfig, ChatMessage, FileMeta } from '@shared/types'
 import { dayStamp, savePastedImage } from './services/assets'
 import { loadEditorState, saveEditorState, type SavedEditorState } from './services/editorState'
@@ -744,6 +745,20 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
     })
     if (picked.canceled || !picked.filePath) return { ok: false }
 
+    const buffer = dataUrlToBuffer(pngDataUrl)
+    // PNG 头里读宽高：16/20 字节，大端
+    let width = 0
+    let height = 0
+    if (buffer.length > 24 && buffer.toString('ascii', 1, 4) === 'PNG') {
+      width = buffer.readUInt32BE(16)
+      height = buffer.readUInt32BE(20)
+    }
+
+    // 用临时文件而不是 data: URL：2x 卡片图片可以有十几 MB，
+    // Chromium 的 data URL 长度上限会直接报 ERR_INVALID_URL (-300)
+    const tempDir = await mkdtemp(join(app.getPath('temp'), 'th-card-'))
+    const pngPath = join(tempDir, 'card.png')
+    const htmlPath = join(tempDir, 'card.html')
     const win = new BrowserWindow({
       show: false,
       width: 900,
@@ -751,20 +766,36 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
       webPreferences: { sandbox: true },
     })
     try {
-      const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-        @page { margin: 0; }
-        html, body { margin: 0; padding: 0; background: #fff; }
-        img { display: block; width: 100%; height: auto; }
-      </style></head><body><img src="${pngDataUrl}"></body></html>`
-      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
-      const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      await writeFile(pngPath, buffer)
+      const html =
+        '<!doctype html><html><head><meta charset="utf-8"><style>' +
+        '@page { margin: 0; }' +
+        'html, body { margin: 0; padding: 0; background: #fff; }' +
+        'img { display: block; width: 100%; height: auto; }' +
+        '</style></head><body><img src="' + pathToFileURL(pngPath).href + '"></body></html>'
+      await writeFile(htmlPath, html, 'utf8')
+      await win.loadFile(htmlPath)
+
+      // 页面高度按卡片比例算，整张卡片放在一页里，不分页切断
+      const pageWidthIn = 8.27
+      const pageHeightIn =
+        width > 0 && height > 0
+          ? Math.min(200, Math.max(2, (pageWidthIn * height) / width))
+          : 11.69
+
+      const pdf = await win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: { width: pageWidthIn, height: pageHeightIn },
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+        preferCSSPageSize: false,
+      })
       await writeFile(picked.filePath, pdf)
       return { ok: true, path: picked.filePath }
     } finally {
       win.destroy()
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
     }
   })
-
   ipcMain.handle('onenote:status', async () => getOneNoteStatus())
 
   ipcMain.handle('onenote:run', async (event) => {
