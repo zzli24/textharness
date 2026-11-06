@@ -52,9 +52,12 @@ jobs:
       - name: Package macOS
         # 两种架构分两次打包：同时跑会抢 dmgbuild 的锁，偶发
         # "Lock file is already being held"（0.4.8 构建就是栽在这）
+        # 每个架构单独一次调用、只出一个 dmg：
+        # 同一次调用里 dmg+zip 会并行，抢 electron 缓存锁，CI 上偶发
+        # "Lock file is already being held"
         run: |
-          npx electron-builder --mac --x64 --publish never
-          npx electron-builder --mac --arm64 --publish never
+          npx electron-builder --mac dmg --x64 --publish never
+          npx electron-builder --mac dmg --arm64 --publish never
         env:
           # 没配这些 Secrets 时为空字符串：after-sign 钩子会自动跳过公证
           CSC_LINK: ${{ secrets.CSC_LINK }}
