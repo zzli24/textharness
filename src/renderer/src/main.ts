@@ -26,6 +26,7 @@ import { closeToolsPanel, openToolsPanel } from './toolsPanel'
 import { createGrid, detectDelimiter, markdownToRows, rowsToMarkdown, serializeCsv, type GridApi } from './gridView'
 import { applyStall, applyUpdateEvent, chipAction, DOWNLOAD_PAGE, initialChip, type ChipState } from './updateChip'
 import { configureLiveMarkdown } from './liveMarkdown'
+import { createCardPanel, type CardPanel } from './cardPanel'
 import 'katex/dist/katex.min.css'
 import { createChat, type ChatApi } from './aiChat'
 
@@ -47,6 +48,21 @@ const dirName = (p: string): string => p.replace(/[\\/][^\\/]*$/, '')
 const joinPath = (dir: string, name: string): string => {
   const sep = dir.includes('\\') ? '\\' : '/'
   return `${dir.replace(/[\\/]+$/, '')}${sep}${name}`
+}
+
+const resolveRelativePath = (base: string, rel: string): string => {
+  const sep = base.includes('\\') ? '\\' : '/'
+  const parts = `${base}${sep}${rel}`.split(/[\\/]+/)
+  const out: string[] = []
+  for (const part of parts) {
+    if (!part || part === '.') continue
+    if (part === '..') {
+      out.pop()
+      continue
+    }
+    out.push(part)
+  }
+  return (base.startsWith('/') ? '/' : '') + out.join(sep)
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -171,6 +187,42 @@ function setupLiveMarkdownToggle(): void {
   }
 
   button.addEventListener('click', toggle)
+  document.addEventListener('th:doc-changed', refresh)
+  refresh()
+}
+
+/** 右侧卡片面板：把当前 Markdown 变成可导出的卡片 */
+function setupCardPanel(): void {
+  const button = document.getElementById('st-card') as HTMLButtonElement | null
+  if (!button) return
+
+  cardPanel = createCardPanel({
+    getDoc: () => {
+      const doc = activeDoc()
+      if (!doc || !docIsMarkdown(doc)) return null
+      return { title: doc.title, path: doc.path, text: doc.state.doc.toString() }
+    },
+    resolveImage: (src, doc) => {
+      if (/^(https?:|data:|file:)/i.test(src)) return src
+      const base = doc.path ? dirName(doc.path) : joinPath(cfg.workspaceRoot, today())
+      const abs = resolveRelativePath(base, decodeURI(src))
+      return abs ? `th-asset://local/${encodeURIComponent(abs)}` : null
+    },
+  })
+
+  const refresh = (): void => {
+    const on = docIsMarkdown(activeDoc())
+    button.classList.toggle('hidden', !on)
+    button.classList.toggle('active', on && cardPanel?.isOpen() === true)
+    if (cardPanel?.isOpen()) cardPanel.refresh()
+  }
+
+  button.addEventListener('click', () => {
+    if (!docIsMarkdown(activeDoc())) return
+    cardPanel?.toggle()
+    button.classList.toggle('active', cardPanel?.isOpen() === true)
+  })
+
   document.addEventListener('th:doc-changed', refresh)
   refresh()
 }
@@ -319,6 +371,7 @@ let tree: TreeApi
 let chat: ChatApi
 let untitledSeq = 0
 let menu: HTMLElement | null = null
+let cardPanel: CardPanel | null = null
 
 const activeDoc = (): Doc | null => docs.find((d) => d.id === activeId) ?? null
 
@@ -351,6 +404,7 @@ function hooksFor(doc: Doc): ed.EditorHooks {
     onUpdate: ({ docChanged, state }) => {
       // ★ 必须把最新的 EditorState 写回文档对象，否则切标签/保存拿到的都是旧状态
       doc.state = state
+      if (docChanged) cardPanel?.refresh()
       if (docChanged && !doc.dirty) {
         doc.dirty = true
         renderTabs()
@@ -2848,6 +2902,7 @@ async function boot(): Promise<void> {
   setupSplitResizer()
   setupUpdater()
 setupLiveMarkdownToggle()
+setupCardPanel()
   setupDropZone()
 
   $('st-diff').addEventListener('click', () => {

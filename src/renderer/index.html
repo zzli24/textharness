@@ -6,6 +6,7 @@
     <title>TextHarness</title>
     <link rel="stylesheet" href="./src/style.css" />
     <link rel="stylesheet" href="./src/mdThemes.css" />
+    <link rel="stylesheet" href="./src/cardThemes.css" />
     <link rel="stylesheet" href="./src/chat.css" />
   </head>
   <body>
@@ -143,6 +144,9 @@
       <footer id="status">
         <span id="st-path" class="st-path">就绪</span>
         <span class="spacer"></span>
+        <button id="st-card" class="st-btn icon-only hidden" title="卡片预览：把当前 Markdown 导出成图片">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/><circle cx="16.5" cy="15.5" r="1.6"/></svg>
+        </button>
         <button id="st-live-md" class="st-btn icon-only hidden" title="Markdown 即时渲染（像 Typora）：光标所在行显示源码">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7 15.2V9.4l2.1 3 2.1-3v5.8"/><path d="M16.2 9.4v4.2"/><path d="M14.4 12l1.8 2.4 1.8-2.4"/></svg>
         </button>

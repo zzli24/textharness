@@ -189,6 +189,7 @@ export interface ThApi {
     ): void
     replyConfirm(id: string, index: number): void
     openUrl(url: string): Promise<void>
+
     updateCheck(): Promise<void>
     updateInstall(): Promise<{ ok: boolean; reason?: string }>
     updateFeed(): Promise<string>
@@ -210,6 +211,10 @@ export interface ThApi {
     pathForFile(file: File): string
     /** 用系统浏览器打开外部链接（仅 http/https） */
     openUrl(url: string): Promise<void>
+    /** 保存卡片导出的 PNG/SVG/PDF 数据 */
+    saveExport(dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf'): Promise<{ ok: boolean; path?: string }>
+    /** 把卡片截图转成 PDF（主进程隐藏窗口 printToPDF） */
+    exportPdf(pngDataUrl: string, defaultName: string): Promise<{ ok: boolean; path?: string }>
     /** 仅开发期存在 */
     debugAccess?(path: string, mode: 'read' | 'write'): Promise<'deny' | 'read' | 'write'>
   }

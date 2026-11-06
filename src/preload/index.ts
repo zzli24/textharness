@@ -220,6 +220,10 @@ const api = {
     },
     replyConfirm: (id: string, index: number) => ipcRenderer.send('ui:confirm:reply', { id, index }),
     openUrl: (url: string) => ipcRenderer.invoke('app:openUrl', url) as Promise<void>,
+    saveExport: (dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf') =>
+      ipcRenderer.invoke('app:saveExport', dataUrl, defaultName, kind) as Promise<{ ok: boolean; path?: string }>,
+    exportPdf: (pngDataUrl: string, defaultName: string) =>
+      ipcRenderer.invoke('app:exportPdf', pngDataUrl, defaultName) as Promise<{ ok: boolean; path?: string }>,
     updateCheck: () => ipcRenderer.invoke('update:check') as Promise<void>,
     updateInstall: () => ipcRenderer.invoke('update:install') as Promise<{ ok: boolean; reason?: string }>,
     updateFeed: () => ipcRenderer.invoke('update:feed') as Promise<string>,

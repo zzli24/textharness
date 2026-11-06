@@ -1,0 +1,441 @@
+@font-face {
+  font-family: 'ZCOOL QingKe HuangYou';
+  src: url('../assets/fonts/ZCOOLQingKeHuangYou-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================
+ * Markdown 卡片（导出用）
+ *
+ * 参考 md2card.online：固定 720px 画布 + 一组 token 主题 + 导出成图。
+ * 这里刻意不复用编辑器的 .cm-md-* 样式：卡片是独立的 HTML 容器，
+ * 可以有整块背景、圆角、装饰，不受 CodeMirror 行结构限制。
+ * ============================================================ */
+
+.th-card {
+  width: 720px;
+  box-sizing: border-box;
+  padding: 42px 46px 46px;
+  border-radius: 18px;
+  background: var(--card-bg, #ffffff);
+  color: var(--card-fg, #333333);
+  font-family: var(--card-font, 'Segoe UI', 'Microsoft YaHei', sans-serif);
+  font-size: 16px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-shadow: var(--card-shadow, 0 10px 30px rgba(0, 0, 0, 0.08));
+}
+
+.th-card * {
+  box-sizing: border-box;
+}
+
+.th-card h1,
+.th-card h2,
+.th-card h3,
+.th-card h4,
+.th-card h5,
+.th-card h6 {
+  font-family: var(--card-heading-font, var(--card-font, inherit));
+  color: var(--card-head, currentColor);
+  line-height: 1.35;
+  margin: 1.2em 0 0.55em;
+  font-weight: 700;
+}
+
+.th-card h1:first-child,
+.th-card h2:first-child,
+.th-card h3:first-child {
+  margin-top: 0;
+}
+
+.th-card h1 {
+  font-size: 2em;
+  letter-spacing: 0.01em;
+}
+
+.th-card h2 {
+  font-size: 1.4em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.th-card h2::before {
+  content: '';
+  width: var(--card-heading-dot, 0px);
+  height: var(--card-heading-dot, 0px);
+  border-radius: 50%;
+  background: var(--card-accent, currentColor);
+  flex: none;
+}
+
+.th-card h3 {
+  font-size: 1.15em;
+}
+
+.th-card p {
+  margin: 0.7em 0;
+}
+
+.th-card strong {
+  color: var(--card-strong, inherit);
+  font-weight: 700;
+}
+
+.th-card a {
+  color: var(--card-accent, #0969da);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.th-card ul,
+.th-card ol {
+  padding-left: 1.4em;
+  margin: 0.7em 0;
+}
+
+.th-card li {
+  margin: 0.3em 0;
+}
+
+.th-card ul > li::marker {
+  color: var(--card-accent, currentColor);
+  font-size: 0.9em;
+}
+
+.th-card blockquote {
+  margin: 1em 0;
+  padding: 12px 18px;
+  border-left: 4px solid var(--card-accent, #999);
+  border-radius: var(--card-quote-radius, 8px);
+  background: var(--card-quote-bg, rgba(0, 0, 0, 0.04));
+  color: var(--card-quote-fg, inherit);
+}
+
+.th-card blockquote p {
+  margin: 0.35em 0;
+}
+
+.th-card code {
+  font-family: 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+  font-size: 0.9em;
+  background: var(--card-code-bg, #f2f2f2);
+  color: var(--card-code-fg, inherit);
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.th-card pre {
+  background: var(--card-code-bg, #f6f8fa);
+  border: 1px solid var(--card-border, transparent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.th-card pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--card-code-fg, inherit);
+}
+
+.th-card .card-table-wrap {
+  overflow-x: auto;
+  margin: 1em 0;
+  border: 1px solid var(--card-border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.th-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.th-card th,
+.th-card td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--card-border, #e5e7eb);
+  border-right: 1px solid var(--card-border, #e5e7eb);
+  text-align: left;
+  vertical-align: top;
+}
+
+.th-card th:last-child,
+.th-card td:last-child {
+  border-right: none;
+}
+
+.th-card tr:last-child td {
+  border-bottom: none;
+}
+
+.th-card th {
+  background: var(--card-table-head, var(--card-code-bg, #f6f8fa));
+}
+
+.th-card img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--card-image-radius, 8px);
+  display: block;
+  margin: 0.8em auto;
+}
+
+.th-card hr {
+  border: none;
+  border-top: 1px solid var(--card-border, #e5e7eb);
+  margin: 1.4em 0;
+}
+
+/* ---------- 主题：清新自然（md2card themeFreshNature） ---------- */
+
+.th-card[data-card-theme='fresh'] {
+  --card-bg: linear-gradient(to right, #f0fff4 0%, #ffffff 100%);
+  --card-fg: #2f855a;
+  --card-head: #276749;
+  --card-accent: #48bb78;
+  --card-border: #c6f6d5;
+  --card-code-bg: #f0fff4;
+  --card-code-fg: #276749;
+  --card-quote-bg: rgba(240, 255, 244, 0.85);
+  --card-quote-radius: 10px;
+  --card-heading-dot: 8px;
+  --card-font: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --card-heading-font: 'ZCOOL QingKe HuangYou', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  --card-image-radius: 12px;
+}
+
+/* ---------- 主题：童话（md2card themeChildrenFairytale） ---------- */
+
+.th-card[data-card-theme='fairytale'] {
+  --card-bg: linear-gradient(120deg, #fff5f7 0%, #fffbeb 100%);
+  --card-fg: #4a5568;
+  --card-head: #b7791f;
+  --card-accent: #ecc94b;
+  --card-border: #fbd38d;
+  --card-code-bg: #fffff0;
+  --card-code-fg: #744210;
+  --card-quote-bg: rgba(255, 251, 235, 0.9);
+  --card-heading-dot: 10px;
+  --card-font: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --card-heading-font: 'ZCOOL QingKe HuangYou', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --card-image-radius: 18px;
+}
+
+/* ---------- 主题：备忘录 ---------- */
+
+.th-card[data-card-theme='notes'] {
+  --card-bg: #ffffff;
+  --card-fg: #1d1d1f;
+  --card-head: #1d1d1f;
+  --card-accent: #007aff;
+  --card-border: #e5e5ea;
+  --card-code-bg: #f2f2f7;
+  --card-code-fg: #1d1d1f;
+  --card-quote-bg: #f2f2f7;
+  --card-quote-radius: 10px;
+  --card-heading-dot: 0px;
+  --card-font: -apple-system, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --card-heading-font: var(--card-font);
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --card-image-radius: 12px;
+}
+
+/* ---------- 主题：商务 ---------- */
+
+.th-card[data-card-theme='business'] {
+  --card-bg: linear-gradient(160deg, #ffffff 0%, #f7fbff 100%);
+  --card-fg: #2d3748;
+  --card-head: #2c5282;
+  --card-accent: #3182ce;
+  --card-border: #bee3f8;
+  --card-code-bg: #ebf8ff;
+  --card-code-fg: #2c5282;
+  --card-quote-bg: rgba(235, 248, 255, 0.9);
+  --card-heading-dot: 0px;
+  --card-font: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --card-heading-font: var(--card-font);
+  --card-image-radius: 8px;
+}
+
+/* ---------- 主题：暗夜 ---------- */
+
+.th-card[data-card-theme='cyber'] {
+  --card-bg: linear-gradient(160deg, #111318 0%, #1b1f2a 100%);
+  --card-fg: #d7dce5;
+  --card-head: #f8f8f2;
+  --card-accent: #8be9fd;
+  --card-border: #333a4a;
+  --card-code-bg: #0b0d12;
+  --card-code-fg: #d7dce5;
+  --card-quote-bg: rgba(139, 233, 253, 0.08);
+  --card-heading-dot: 0px;
+  --card-font: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --card-heading-font: var(--card-font);
+  --card-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  --card-image-radius: 10px;
+}
+
+/* ---------- 右侧卡片面板 ---------- */
+
+.card-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 620px;
+  max-width: 92vw;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.28);
+}
+
+.card-panel.hidden {
+  display: none;
+}
+
+.card-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.card-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.card-panel-sub {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.card-panel-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.card-panel-close:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+
+.card-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.card-controls label {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.card-controls select {
+  background: var(--bg-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.card-controls input[type='range'] {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.card-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: var(--bg-2);
+}
+
+.card-stage .th-card {
+  transform-origin: top center;
+  flex: none;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.card-foot button {
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.card-foot button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.card-foot button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.card-foot button.primary:hover {
+  filter: brightness(1.08);
+  color: #fff;
+}
+
+.card-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+/* 状态栏卡片按钮：打开时高亮 */
+#st-card.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

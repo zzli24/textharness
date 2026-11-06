@@ -706,6 +706,62 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   ipcMain.on('app:activity', () => deps.getScheduler()?.touch())
 
   // 只允许 http/https，避免被当成任意协议处理器
+  function dataUrlToBuffer(dataUrl: string): Buffer {
+    const comma = dataUrl.indexOf(',')
+    const meta = comma >= 0 ? dataUrl.slice(0, comma) : ''
+    const body = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+    return meta.includes('base64') ? Buffer.from(body, 'base64') : Buffer.from(decodeURIComponent(body), 'utf8')
+  }
+
+  ipcMain.handle(
+    'app:saveExport',
+    async (_event, dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf') => {
+      const filters =
+        kind === 'png'
+          ? [{ name: 'PNG 图片', extensions: ['png'] }]
+          : kind === 'svg'
+            ? [{ name: 'SVG 图片', extensions: ['svg'] }]
+            : [{ name: 'PDF 文档', extensions: ['pdf'] }]
+      const picked = await dialog.showSaveDialog({
+        title: '保存卡片',
+        defaultPath: join(app.getPath('downloads'), defaultName),
+        filters,
+      })
+      if (picked.canceled || !picked.filePath) return { ok: false }
+      await writeFile(picked.filePath, dataUrlToBuffer(dataUrl))
+      return { ok: true, path: picked.filePath }
+    }
+  )
+
+  ipcMain.handle('app:exportPdf', async (_event, pngDataUrl: string, defaultName: string) => {
+    const picked = await dialog.showSaveDialog({
+      title: '保存卡片 PDF',
+      defaultPath: join(app.getPath('downloads'), defaultName),
+      filters: [{ name: 'PDF 文档', extensions: ['pdf'] }],
+    })
+    if (picked.canceled || !picked.filePath) return { ok: false }
+
+    const win = new BrowserWindow({
+      show: false,
+      width: 900,
+      height: 1200,
+      webPreferences: { sandbox: true },
+    })
+    try {
+      const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+        @page { margin: 0; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        img { display: block; width: 100%; height: auto; }
+      </style></head><body><img src="${pngDataUrl}"></body></html>`
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+      const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      await writeFile(picked.filePath, pdf)
+      return { ok: true, path: picked.filePath }
+    } finally {
+      win.destroy()
+    }
+  })
+
   ipcMain.handle('app:openUrl', async (_e, url: string) => {
     if (!/^https?:\/\//i.test(url)) throw new Error('只支持 http/https 链接')
     await shell.openExternal(url)
