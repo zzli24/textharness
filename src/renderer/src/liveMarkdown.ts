@@ -69,6 +69,9 @@ class CodeHeaderWidget extends WidgetType {
   toDOM(): HTMLElement {
     const head = document.createElement('div')
     head.className = this.hasCode ? 'cm-md-code-head' : 'cm-md-code-head cm-md-code-head-only'
+    const label = document.createElement('span')
+    label.className = 'cm-md-code-label'
+    label.textContent = '代码块'
     const name = document.createElement('span')
     name.className = 'cm-md-code-lang'
     name.textContent = this.lang ? this.lang.toUpperCase() : 'CODE'
@@ -85,7 +88,7 @@ class CodeHeaderWidget extends WidgetType {
         copy.textContent = '复制'
       }, 1200)
     })
-    head.append(name, copy)
+    head.append(label, name, copy)
     return head
   }
 

@@ -411,51 +411,63 @@ html[data-md-theme='dracula'][data-theme='dark'] {
 .cm-md-code-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 6px 12px;
   background: var(--md-code-bg);
   border: 1px solid var(--md-code-border);
-  border-bottom: 1px solid transparent;
+  border-bottom: 1px solid var(--md-code-border);
   border-radius: 8px 8px 0 0;
   color: var(--md-muted);
   font-family: var(--md-font);
   font-size: 11px;
   line-height: 1.6;
-  transition: border-color 0.15s ease;
 }
 
-.cm-md-code-head .cm-md-code-lang,
-.cm-md-code-head .cm-md-code-copy {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
+.cm-md-code-label {
+  color: var(--md-muted);
+  opacity: 0.85;
 }
 
-.cm-md-code-head:hover,
-.cm-md-code-head:focus-within {
-  border-bottom-color: var(--md-code-border);
+.cm-md-code-lang {
+  margin-left: auto;
+  font-family: 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
 }
 
-/* 头部占固定高度：内容隐藏/出现时卡片不跳动 */
+.cm-md-code-copy {
+  margin-left: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--md-muted);
+  font: inherit;
+  padding: 1px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.cm-md-code-copy:hover {
+  opacity: 1;
+  background: var(--md-inline-bg);
+  border-color: var(--md-border);
+  color: var(--md-head);
+}
+
+/* 固定高度，避免内容变化时卡片跳动 */
 #editor-host.md-live .cm-md-code-head-line {
-  height: 34px !important;
-  min-height: 34px !important;
+  height: 33px !important;
+  min-height: 33px !important;
 }
 
-.cm-md-code-head:hover .cm-md-code-lang,
-.cm-md-code-head:hover .cm-md-code-copy,
-.cm-md-code-head:focus-within .cm-md-code-lang,
-.cm-md-code-head:focus-within .cm-md-code-copy {
-  opacity: 1;
-  pointer-events: auto;
+/* 空代码块：底边也画上，避免只剩一条线 */
+.cm-md-code-head-only {
+  border-bottom-color: var(--md-code-border);
+  border-radius: 8px;
 }
 
-/* 空代码块没有内容可悬停，始终显示顶栏 */
-.cm-md-code-head-only .cm-md-code-lang,
-.cm-md-code-head-only .cm-md-code-copy {
-  opacity: 1;
-  pointer-events: auto;
-}
 
 .cm-md-code-head-only {
   border-bottom: 1px solid var(--md-code-border);
@@ -471,31 +483,6 @@ html[data-md-theme='dracula'][data-theme='dark'] {
   overflow: hidden !important;
 }
 
-.cm-md-code-lang {
-  font-family: 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.cm-md-code-copy {
-  margin-left: auto;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--md-muted);
-  font: inherit;
-  padding: 1px 8px;
-  border-radius: 5px;
-  cursor: pointer;
-  opacity: 0.75;
-}
-
-.cm-md-code-copy:hover {
-  opacity: 1;
-  background: var(--md-inline-bg);
-  border-color: var(--md-border);
-  color: var(--md-head);
-}
 
 .cm-md-codeblock,
 .cm-md-codeblock-active {
@@ -522,24 +509,90 @@ html[data-md-theme='dracula'][data-theme='dark'] {
 /* CM 主题会给 .cm-line 设 padding，这里用 ID 选择器统一卡片内边距 */
 #editor-host.md-live .cm-md-codeblock,
 #editor-host.md-live .cm-md-codeblock-active {
-  padding-left: 12px;
-  padding-right: 12px;
+  padding-left: 3.4em;
+  padding-right: 14px;
+  position: relative;
+  counter-increment: md-code-line;
 }
+
+/* 行号画在卡片内部左侧，而不是编辑器边栏 */
+#editor-host.md-live .cm-md-codeblock::before {
+  content: counter(md-code-line);
+  position: absolute;
+  left: 0.7em;
+  width: 1.8em;
+  text-align: right;
+  color: var(--md-muted);
+  opacity: 0.55;
+  font-size: 0.82em;
+  user-select: none;
+  pointer-events: none;
+}
+
+#editor-host.md-live .cm-md-code-first {
+  counter-reset: md-code-line 0;
+}
+
 
 .cm-md-codeblock-active {
   border-radius: 8px;
 }
 
 .cm-md-code-first {
-  padding-top: 8px;
+  padding-top: 12px;
 }
 
 .cm-md-code-last {
-  padding-bottom: 8px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--md-code-border);
   border-radius: 0 0 8px 8px;
 }
 
+/* ---------- 表格 / 图片 / Mermaid 跟随主题 token ---------- */
+
+.cm-md-table-wrap {
+  border-color: var(--md-border);
+  background: transparent;
+}
+
+.cm-md-table-bar {
+  color: var(--md-muted);
+  border-bottom-color: var(--md-border);
+}
+
+.cm-md-table th,
+.cm-md-table td {
+  border-color: var(--md-border);
+  border-right-width: var(--md-table-vborder);
+}
+
+.cm-md-table th {
+  background: var(--md-table-head-bg);
+  color: var(--md-head);
+}
+
+.cm-md-table tbody tr:nth-child(even) td {
+  background: var(--md-table-stripe);
+}
+
+.cm-md-table-edit {
+  border-color: var(--md-border);
+  color: var(--md-muted);
+}
+
+.cm-md-table-edit:hover {
+  color: var(--md-accent);
+  border-color: var(--md-accent);
+}
+
+.cm-md-image img {
+  border-radius: var(--md-image-radius);
+  border-color: var(--md-border);
+}
+
+.cm-md-mermaid {
+  border-color: var(--md-border);
+}
 /* ---------- 设置里的主题卡片 ---------- */
 
 .md-theme-grid {
@@ -611,4 +664,12 @@ html[data-md-theme='dracula'][data-theme='dark'] {
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 11.5px;
   color: var(--fg);
+}
+
+
+/* 设置里的 Markdown 渲染分区：和上方背景图拉开距离 */
+.md-section {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
 }

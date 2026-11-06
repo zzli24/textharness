@@ -549,8 +549,10 @@ let theme = current.theme
           })
       })
 
-      title(pane, 'Markdown 渲染')
-      desc(pane, '只影响 .md 的即时渲染，源码模式不受影响；主题会跟随深色/浅色自动切换色板。')
+      const mdSection = document.createElement('div')
+      mdSection.className = 'md-section'
+      title(mdSection, 'Markdown 渲染')
+      desc(mdSection, '只影响 .md 的即时渲染，源码模式不受影响；主题会跟随深色/浅色自动切换色板。')
 
       const mdThemes = [
         {
@@ -644,7 +646,7 @@ let theme = current.theme
         mdCards.push(card)
         mdGrid.appendChild(card)
       }
-      pane.appendChild(mdGrid)
+      mdSection.appendChild(mdGrid)
 
       const syncMdCards = (): void => {
         for (const card of mdCards) {
@@ -665,7 +667,7 @@ let theme = current.theme
       const hint = document.createElement('span')
       hint.textContent = '选「自定义 CSS」后生效；变量名见文件内注释。'
       mdCustomRow.append(pathCode, createBtn, reloadBtn, hint)
-      pane.appendChild(mdCustomRow)
+      mdSection.appendChild(mdCustomRow)
 
       const lineNumberRow = document.createElement('label')
       lineNumberRow.className = 'md-custom-row'
@@ -678,7 +680,8 @@ let theme = current.theme
       const lineNumberText = document.createElement('span')
       lineNumberText.textContent = '即时渲染时显示行号（默认关，关掉排版更干净）'
       lineNumberRow.append(lineNumberBox, lineNumberText)
-      pane.appendChild(lineNumberRow)
+      mdSection.appendChild(lineNumberRow)
+      pane.appendChild(mdSection)
 
       const MD_CSS_TEMPLATE = `/* TextHarness 自定义 Markdown 渲染样式
  * 在 设置 → 外观 → Markdown 渲染 里选「自定义 CSS」后生效。
