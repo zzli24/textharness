@@ -5,8 +5,8 @@ import { decodeText, encodeText } from './encoding'
 
 /** 单文件读取上限：超过后按"大文件"拒绝，避免主进程卡死 */
 const MAX_READ = 64 * 1024 * 1024
-const MAX_DEPTH = 6
-const MAX_NODES = 5000
+const MAX_DEPTH = 12
+const MAX_NODES = 20000
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.npm-cache', 'out', 'dist'])
 
 export function assertInside(root: string, target: string): string {
