@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { createWriteStream, promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
 import AdmZip from 'adm-zip'
 
@@ -185,16 +185,19 @@ export async function runOneNoteExport(
   }
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
-  const runDir = join(toolRoot(), 'runs', stamp)
+  // 工具用相对路径读 Resources/ 和 pandoc/，cwd 必须是 exe 所在目录，
+  // 不能是单独的 run 目录（否则报 DirectoryNotFoundException）
+  const exeDir = dirname(exe)
+  const exportsDir = join(exeDir, 'Exports')
   const logDir = join(toolRoot(), 'logs')
-  await fs.mkdir(runDir, { recursive: true })
+  await fs.rm(exportsDir, { recursive: true, force: true })
   await fs.mkdir(logDir, { recursive: true })
   const logPath = join(logDir, 'export-' + stamp + '.log')
   onProgress({ phase: 'export', message: '正在调用 OneNote 导出，第一次会比较慢…' })
 
   const result = await new Promise<{ code: number | null; output: string[] }>((resolve) => {
     const child = spawn(exe as string, ['--all-notebooks', '-f', '1', '--no-input', '--ignore-errors'], {
-      cwd: runDir,
+      cwd: exeDir,
       windowsHide: true,
     })
     const output: string[] = []
@@ -224,7 +227,6 @@ export async function runOneNoteExport(
       : String(result.code)
   const lastLine = result.output.filter((line) => line.length > 0).slice(-1)[0] ?? ''
 
-  const exportsDir = join(runDir, 'Exports')
   const exists = await fs.stat(exportsDir).then(() => true).catch(() => false)
   if (!exists) {
     return {
