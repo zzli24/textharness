@@ -248,6 +248,7 @@ export interface ThApi {
       failed: number
       targetDir?: string
       error?: string
+      logPath?: string
     }>
     /** 订阅 OneNote 导出进度，返回取消订阅函数 */
     onOneNoteProgress(cb: (progress: { phase: string; percent?: number; message?: string }) => void): () => void

@@ -4251,3 +4251,12 @@ html[data-theme='light'] .cm-bracket-l4 { color: #2f7d3c; }
   gap: 8px;
   flex-wrap: wrap;
 }
+.set-note-flush {
+  margin-left: 0;
+}
+
+.import-error {
+  color: var(--danger);
+  line-height: 1.7;
+  word-break: break-word;
+}

@@ -880,7 +880,16 @@ html[data-md-theme='custom'][data-theme='dark'] {
                 try {
                   const result = await window.th.app.oneNoteRun()
                   if (!result.ok) {
-                    status.textContent = 'OneNote 导入失败：' + (result.error ?? '未知错误')
+                    status.innerHTML = ''
+                    const line = document.createElement('div')
+                    line.className = 'import-error'
+                    line.textContent = 'OneNote 导入失败：' + (result.error ?? '未知错误')
+                    status.appendChild(line)
+                    if (result.logPath) {
+                      const openLog = button('打开日志')
+                      openLog.addEventListener('click', () => void window.th.app.revealPath(result.logPath as string))
+                      status.appendChild(openLog)
+                    }
                     return
                   }
                   status.innerHTML = ''
@@ -938,7 +947,10 @@ html[data-md-theme='custom'][data-theme='dark'] {
         })
       }
 
-      note(pane, '导入的文件不会覆盖原有笔记；同名文件按上面的策略处理。Evernote 的附件会放在 _attachments/ 里。')
+      const importNote = document.createElement('p')
+      importNote.className = 'set-note set-note-flush'
+      importNote.textContent = '导入的文件不会覆盖原有笔记；同名文件按上面的策略处理。Evernote 的附件会放在 _attachments/ 里。'
+      pane.appendChild(importNote)
 
       const backupTitle = document.createElement('div')
       backupTitle.className = 'import-section-title'

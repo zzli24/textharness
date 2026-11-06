@@ -805,7 +805,14 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
     }
     const exported = await runOneNoteExport(configOnProgress)
     if (!exported.ok || !exported.dir) {
-      return { ok: false, imported: 0, skipped: 0, failed: 0, error: exported.error ?? '导出失败' }
+      return {
+        ok: false,
+        imported: 0,
+        skipped: 0,
+        failed: 0,
+        error: exported.error ?? '导出失败',
+        logPath: exported.logPath,
+      }
     }
     configOnProgress({ phase: 'import', message: '正在导入到工作区…' })
     const result = await importNotes({

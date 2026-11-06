@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { createWriteStream, promises as fs } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import AdmZip from 'adm-zip'
 
 /**
@@ -76,6 +76,18 @@ function findExeSync(root: string): string | null {
     }
   }
   return null
+}
+
+function isProcessRunning(imageName: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile('tasklist', ['/FI', `IMAGENAME eq ${imageName}`, '/NH'], { windowsHide: true }, (err, stdout) => {
+      if (err) {
+        resolve(true)
+        return
+      }
+      resolve(stdout.toLowerCase().includes(imageName.toLowerCase()))
+    })
+  })
 }
 
 export function getOneNoteStatus(): OneNoteStatus {
@@ -153,9 +165,17 @@ export async function installOneNoteTool(
 
 export async function runOneNoteExport(
   onProgress: (progress: OneNoteProgress) => void
-): Promise<{ ok: boolean; dir?: string; count?: number; error?: string }> {
+): Promise<{ ok: boolean; dir?: string; count?: number; error?: string; logPath?: string }> {
   const status = getOneNoteStatus()
   if (!status.ready) return { ok: false, error: status.reason ?? '环境不满足' }
+
+  // OneNote 没打开时 COM 会直接抛 .NET 异常，先给一句人话
+  if (!(await isProcessRunning('ONENOTE.EXE'))) {
+    return {
+      ok: false,
+      error: '请先打开 OneNote，等笔记本同步完成后再点一次（导出需要 OneNote 处于运行状态）',
+    }
+  }
 
   let exe = status.toolExe
   if (!exe) {
@@ -164,8 +184,12 @@ export async function runOneNoteExport(
     exe = installed.exe
   }
 
-  const runDir = join(toolRoot(), 'runs', new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-'))
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+  const runDir = join(toolRoot(), 'runs', stamp)
+  const logDir = join(toolRoot(), 'logs')
   await fs.mkdir(runDir, { recursive: true })
+  await fs.mkdir(logDir, { recursive: true })
+  const logPath = join(logDir, 'export-' + stamp + '.log')
   onProgress({ phase: 'export', message: '正在调用 OneNote 导出，第一次会比较慢…' })
 
   const result = await new Promise<{ code: number | null; output: string[] }>((resolve) => {
@@ -192,12 +216,26 @@ export async function runOneNoteExport(
     child.on('close', (code) => resolve({ code, output }))
   })
 
+  await fs.writeFile(logPath, result.output.join('\n'), 'utf8').catch(() => undefined)
+
+  const codeHex =
+    typeof result.code === 'number' && result.code > 0
+      ? '0x' + (result.code >>> 0).toString(16).toUpperCase()
+      : String(result.code)
+  const lastLine = result.output.filter((line) => line.length > 0).slice(-1)[0] ?? ''
+
   const exportsDir = join(runDir, 'Exports')
   const exists = await fs.stat(exportsDir).then(() => true).catch(() => false)
   if (!exists) {
     return {
       ok: false,
-      error: result.code === 0 ? '导出完成但没有找到 Exports 目录' : `导出失败（退出码 ${result.code}）`,
+      logPath,
+      error:
+        '导出失败（退出码 ' +
+        codeHex +
+        '）' +
+        (lastLine ? '：' + lastLine.slice(0, 200) : '') +
+        '。请确认 OneNote 已打开并登录、Word 能正常启动，然后重试。',
     }
   }
 
@@ -211,5 +249,5 @@ export async function runOneNoteExport(
     }
   }
   await walk(exportsDir)
-  return { ok: true, dir: exportsDir, count }
+  return { ok: true, dir: exportsDir, count, logPath }
 }

@@ -279,6 +279,7 @@ const api = {
         failed: number
         targetDir?: string
         error?: string
+        logPath?: string
       }>,
     onOneNoteProgress: (cb: (progress: { phase: string; percent?: number; message?: string }) => void) => {
       const handler = (_event: unknown, progress: { phase: string; percent?: number; message?: string }): void => cb(progress)
