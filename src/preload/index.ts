@@ -220,10 +220,7 @@ const api = {
     },
     replyConfirm: (id: string, index: number) => ipcRenderer.send('ui:confirm:reply', { id, index }),
     openUrl: (url: string) => ipcRenderer.invoke('app:openUrl', url) as Promise<void>,
-    saveExport: (dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf') =>
-      ipcRenderer.invoke('app:saveExport', dataUrl, defaultName, kind) as Promise<{ ok: boolean; path?: string }>,
-    exportPdf: (pngDataUrl: string, defaultName: string) =>
-      ipcRenderer.invoke('app:exportPdf', pngDataUrl, defaultName) as Promise<{ ok: boolean; path?: string }>,
+
     updateCheck: () => ipcRenderer.invoke('update:check') as Promise<void>,
     updateInstall: () => ipcRenderer.invoke('update:install') as Promise<{ ok: boolean; reason?: string }>,
     updateFeed: () => ipcRenderer.invoke('update:feed') as Promise<string>,
@@ -248,6 +245,12 @@ const api = {
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text) as Promise<void>,
     readText: () => ipcRenderer.invoke('app:readText') as Promise<string>,
     version: () => ipcRenderer.invoke('app:version') as Promise<string>,
+    copyImage: (dataUrl: string) =>
+      ipcRenderer.invoke('app:copyImage', dataUrl) as Promise<{ ok: boolean }>,
+    saveExport: (dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf') =>
+      ipcRenderer.invoke('app:saveExport', dataUrl, defaultName, kind) as Promise<{ ok: boolean; path?: string }>,
+    exportPdf: (pngDataUrl: string, defaultName: string) =>
+      ipcRenderer.invoke('app:exportPdf', pngDataUrl, defaultName) as Promise<{ ok: boolean; path?: string }>,
     takePendingFile: () => ipcRenderer.invoke('app:takePendingFile') as Promise<string | null>,
     capturePage: (target: string) =>
       ipcRenderer.invoke('debug:capturePage', target) as Promise<{ ok: boolean; width: number; height: number }>,

@@ -188,8 +188,14 @@ export function createCardPanel(deps: CardPanelDeps): CardPanel {
       try {
         const blob = await exportBlob('png')
         if (!blob) return
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-        setStatus('已复制到剪贴板')
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(blob)
+        })
+        const result = await window.th.app.copyImage(dataUrl)
+        setStatus(result.ok ? '已复制到剪贴板' : '复制失败')
       } catch (err) {
         setStatus(`复制失败：${err instanceof Error ? err.message : String(err)}`)
       } finally {
@@ -239,7 +245,9 @@ export function createCardPanel(deps: CardPanelDeps): CardPanel {
         }
         // data:image/svg+xml;charset=utf-8,<encoded>
         const comma = dataUrl.indexOf(',')
-        const svgText = comma >= 0 ? decodeURIComponent(dataUrl.slice(comma + 1)) : dataUrl
+        const meta = comma >= 0 ? dataUrl.slice(0, comma) : ''
+        const body = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl
+        const svgText = meta.includes('base64') ? atob(body) : decodeURIComponent(body)
         const result = await window.th.app.saveExport(svgText, fileName('svg'), 'svg')
         setStatus(result.ok ? `已保存：${result.path ?? ''}` : '已取消')
       } catch (err) {

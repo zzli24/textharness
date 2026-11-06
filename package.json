@@ -1,6 +1,6 @@
 {
   "name": "textharness",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "TextHarness - 轻量本地文本编辑器 + 内置 AI 助手",
   "main": "./out/main/index.js",
   "license": "MIT",
