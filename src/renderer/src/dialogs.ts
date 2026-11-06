@@ -791,6 +791,177 @@ html[data-md-theme='custom'][data-theme='dark'] {
       syncSwatches()
     }
 
+
+    /* ---------------- 导入 / 备份 ---------------- */
+    const buildImport = (pane: HTMLElement): void => {
+      title(pane, '导入')
+      desc(pane, '把其他笔记软件的内容搬进来。导入的笔记会放进工作区的「导入/」目录，自动进入文件树和全文搜索。')
+
+      const conflictRow = document.createElement('div')
+      conflictRow.className = 'import-options'
+      const conflictLabel = document.createElement('label')
+      conflictLabel.textContent = '同名文件冲突'
+      const conflictSelect = document.createElement('select')
+      conflictSelect.className = 'import-select'
+      for (const [value, label] of [
+        ['rename', '自动重命名'],
+        ['skip', '跳过'],
+        ['overwrite', '覆盖'],
+      ] as const) {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = label
+        conflictSelect.appendChild(option)
+      }
+      conflictRow.append(conflictLabel, conflictSelect)
+      pane.appendChild(conflictRow)
+
+      const sources: Array<{ id: 'markdown' | 'enex' | 'docx' | 'html' | 'zip'; name: string; desc: string; icon: string }> = [
+        { id: 'markdown', name: 'Markdown / Obsidian', desc: '选一个文件夹，保留目录结构和图片附件', icon: '📁' },
+        { id: 'enex', name: 'Evernote', desc: '导入 .enex 导出文件，正文转 Markdown', icon: '📓' },
+        { id: 'docx', name: 'Word', desc: '导入 .docx，保留标题、列表、表格', icon: '📄' },
+        { id: 'zip', name: 'Notion / 压缩包', desc: '导入含 Markdown 的 .zip 导出包', icon: '🗜️' },
+        { id: 'html', name: '网页 HTML', desc: '把单个 .html 转成 Markdown', icon: '🌐' },
+      ]
+
+      const grid = document.createElement('div')
+      grid.className = 'import-grid'
+      const cards: HTMLButtonElement[] = []
+      for (const item of sources) {
+        const card = document.createElement('button')
+        card.type = 'button'
+        card.className = 'import-card'
+        card.dataset.importSource = item.id
+
+        const icon = document.createElement('span')
+        icon.className = 'import-icon'
+        icon.textContent = item.icon
+        const name = document.createElement('span')
+        name.className = 'import-name'
+        name.textContent = item.name
+        const sub = document.createElement('span')
+        sub.className = 'import-desc'
+        sub.textContent = item.desc
+        card.append(icon, name, sub)
+        cards.push(card)
+        grid.appendChild(card)
+      }
+      pane.appendChild(grid)
+
+      const status = document.createElement('div')
+      status.className = 'import-status'
+      pane.appendChild(status)
+
+      let busy = false
+      const setBusy = (value: boolean): void => {
+        busy = value
+        for (const card of cards) card.disabled = value
+        status.classList.toggle('busy', value)
+      }
+
+      for (const card of cards) {
+        card.addEventListener('click', () => {
+          if (busy) return
+          const source = card.dataset.importSource as 'markdown' | 'enex' | 'docx' | 'html' | 'zip'
+          void (async () => {
+            try {
+              const picked = await window.th.app.importPick(source)
+              if (!picked) return
+              setBusy(true)
+              status.textContent = '正在导入，请稍候…'
+              const result = await window.th.app.importRun({
+                source,
+                inputPath: picked,
+                conflict: conflictSelect.value as 'rename' | 'skip' | 'overwrite',
+              })
+              setBusy(false)
+              if (!result.ok) {
+                status.textContent = '导入失败：' + (result.errors[0] ?? '未知错误')
+                return
+              }
+              status.innerHTML = ''
+              const line = document.createElement('div')
+              line.textContent = '导入完成：' + result.imported + ' 篇' + (result.skipped ? '，跳过 ' + result.skipped : '') + (result.failed ? '，失败 ' + result.failed : '')
+              const pathLine = document.createElement('div')
+              pathLine.className = 'import-path'
+              pathLine.textContent = result.targetDir
+              const open = button('打开导入目录')
+              open.addEventListener('click', () => void window.th.app.revealPath(result.targetDir))
+              status.append(line, pathLine, open)
+              document.dispatchEvent(new CustomEvent('th:refresh-tree'))
+            } catch (err) {
+              setBusy(false)
+              status.textContent = '导入失败：' + (err instanceof Error ? err.message : String(err))
+            }
+          })()
+        })
+      }
+
+      note(pane, '导入的文件不会覆盖原有笔记；同名文件按上面的策略处理。Evernote 的附件会放在 _attachments/ 里。')
+
+      const backupTitle = document.createElement('div')
+      backupTitle.className = 'import-section-title'
+      backupTitle.textContent = '备份与恢复'
+      pane.appendChild(backupTitle)
+
+      const backupDesc = document.createElement('div')
+      backupDesc.className = 'import-backup-desc'
+      backupDesc.textContent = '把整个工作区（笔记、图片、记忆）打成一个 zip；恢复时同名文件自动加 -1，不会覆盖现有内容。'
+      pane.appendChild(backupDesc)
+
+      const backupRow = document.createElement('div')
+      backupRow.className = 'import-backup-row'
+      const backupBtn = button('一键备份工作区')
+      const restoreBtn = button('从备份恢复')
+      backupRow.append(backupBtn, restoreBtn)
+      pane.appendChild(backupRow)
+
+      const backupStatus = document.createElement('div')
+      backupStatus.className = 'import-status'
+      pane.appendChild(backupStatus)
+
+      backupBtn.addEventListener('click', () => {
+        if (busy) return
+        setBusy(true)
+        backupStatus.textContent = '正在打包工作区…'
+        void window.th.app
+          .backupCreate()
+          .then((result) => {
+            if (!result.ok) {
+              backupStatus.textContent = '备份已取消'
+              return
+            }
+            const mb = (result.bytes / 1024 / 1024).toFixed(1)
+            backupStatus.textContent = '备份完成：' + result.files + ' 个文件，' + mb + ' MB\n' + (result.path ?? '')
+          })
+          .catch((err: unknown) => {
+            backupStatus.textContent = '备份失败：' + (err instanceof Error ? err.message : String(err))
+          })
+          .finally(() => setBusy(false))
+      })
+
+      restoreBtn.addEventListener('click', () => {
+        if (busy) return
+        setBusy(true)
+        backupStatus.textContent = '正在恢复…'
+        void window.th.app
+          .backupRestore()
+          .then((result) => {
+            if (!result.ok) {
+              backupStatus.textContent = '已取消'
+              return
+            }
+            backupStatus.textContent =
+              '恢复完成：' + result.restored + ' 个文件' + (result.skipped ? '，跳过 ' + result.skipped : '')
+            document.dispatchEvent(new CustomEvent('th:refresh-tree'))
+          })
+          .catch((err: unknown) => {
+            backupStatus.textContent = '恢复失败：' + (err instanceof Error ? err.message : String(err))
+          })
+          .finally(() => setBusy(false))
+      })
+    }
+
     const buildModel = (pane: HTMLElement): void => {
       title(pane, '模型接入')
       desc(pane, 'Key 只存在这台机器的配置文件里，不会上传到任何地方。')
@@ -1604,6 +1775,7 @@ html[data-md-theme='custom'][data-theme='dark'] {
     /* ================= 导航 ================= */
     const sections: SettingsSection[] = [
       { id: 'workspace', group: '通用', label: '工作区', keywords: ['目录', '路径', '图库', 'assets'], build: buildWorkspace },
+      { id: 'import', group: '通用', label: '导入', keywords: ['导入', '备份', '迁移', 'evernote', 'obsidian', 'onenote', 'word'], build: buildImport },
       { id: 'editor', group: '通用', label: '编辑器', keywords: ['编码', '主题', 'utf8', 'gbk', '换行'], build: buildEditor },
       { id: 'look', group: '通用', label: '外观', keywords: ['背景', '壁纸', '模糊', '不透明度'], build: buildLook },
       { id: 'model', group: 'AI', label: '模型接入', keywords: ['api', 'key', 'baseurl', '推理', 'deepseek'], build: buildModel },

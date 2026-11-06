@@ -211,6 +211,28 @@ export interface ThApi {
     pathForFile(file: File): string
     /** 用系统浏览器打开外部链接（仅 http/https） */
     openUrl(url: string): Promise<void>
+    /** 选择要导入的文件夹/文件 */
+    importPick(source: 'markdown' | 'enex' | 'docx' | 'html' | 'zip'): Promise<string | null>
+    /** 执行导入 */
+    importRun(options: {
+      source: 'markdown' | 'enex' | 'docx' | 'html' | 'zip'
+      inputPath: string
+      conflict?: 'rename' | 'skip' | 'overwrite'
+    }): Promise<{
+      ok: boolean
+      source: string
+      targetDir: string
+      imported: number
+      skipped: number
+      failed: number
+      errors: string[]
+    }>
+    /** 备份整个工作区为 zip */
+    backupCreate(): Promise<{ ok: boolean; path?: string; files: number; bytes: number; error?: string }>
+    /** 从 zip 备份恢复 */
+    backupRestore(): Promise<{ ok: boolean; restored: number; skipped: number; error?: string }>
+    /** 在文件管理器中定位文件 */
+    revealPath(target: string): Promise<void>
     /** 复制图片到系统剪贴板 */
     copyImage(dataUrl: string): Promise<{ ok: boolean }>
     /** 保存卡片导出的 PNG/SVG/PDF 数据 */

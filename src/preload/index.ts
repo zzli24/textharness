@@ -245,6 +245,23 @@ const api = {
     copyText: (text: string) => ipcRenderer.invoke('app:copyText', text) as Promise<void>,
     readText: () => ipcRenderer.invoke('app:readText') as Promise<string>,
     version: () => ipcRenderer.invoke('app:version') as Promise<string>,
+    importPick: (source: 'markdown' | 'enex' | 'docx' | 'html' | 'zip') =>
+      ipcRenderer.invoke('import:pick', source) as Promise<string | null>,
+    importRun: (options: { source: 'markdown' | 'enex' | 'docx' | 'html' | 'zip'; inputPath: string; conflict?: 'rename' | 'skip' | 'overwrite' }) =>
+      ipcRenderer.invoke('import:run', options) as Promise<{
+        ok: boolean
+        source: string
+        targetDir: string
+        imported: number
+        skipped: number
+        failed: number
+        errors: string[]
+      }>,
+    backupCreate: () =>
+      ipcRenderer.invoke('backup:create') as Promise<{ ok: boolean; path?: string; files: number; bytes: number; error?: string }>,
+    backupRestore: () =>
+      ipcRenderer.invoke('backup:restore') as Promise<{ ok: boolean; restored: number; skipped: number; error?: string }>,
+    revealPath: (target: string) => ipcRenderer.invoke('app:revealPath', target) as Promise<void>,
     copyImage: (dataUrl: string) =>
       ipcRenderer.invoke('app:copyImage', dataUrl) as Promise<{ ok: boolean }>,
     saveExport: (dataUrl: string, defaultName: string, kind: 'png' | 'svg' | 'pdf') =>

@@ -3040,6 +3040,7 @@ setupCardPanel()
   }) as EventListener)
   // 对话里点 `路径:行号` → 打开那个文件并跳到对应行
   document.addEventListener('th:md-theme-changed', () => void applyMdTheme(cfg.mdTheme))
+  document.addEventListener('th:refresh-tree', () => void tree.refresh())
   window.addEventListener('th:open-path', ((event: CustomEvent<string | { path: string; line?: number }>) => {
     const detail = event.detail
     const raw = typeof detail === 'string' ? detail : (detail?.path ?? '')
