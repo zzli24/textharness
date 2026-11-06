@@ -9,6 +9,8 @@ export interface CardDoc {
 export interface CardPanelDeps {
   getDoc: () => CardDoc | null
   resolveImage: (src: string, doc: CardDoc) => string | null
+  /** 面板打开/关闭时通知外层，用来同步状态栏按钮高亮 */
+  onOpenChange?: (open: boolean) => void
 }
 
 const THEMES = [
@@ -121,6 +123,7 @@ export function createCardPanel(deps: CardPanelDeps): CardPanel {
 
   const openPanel = (): void => {
     open = true
+    deps.onOpenChange?.(true)
     panel.classList.remove('hidden')
     const doc = deps.getDoc()
     if (doc) {
@@ -136,6 +139,7 @@ export function createCardPanel(deps: CardPanelDeps): CardPanel {
 
   const closePanel = (): void => {
     open = false
+    deps.onOpenChange?.(false)
     panel.classList.add('hidden')
   }
 

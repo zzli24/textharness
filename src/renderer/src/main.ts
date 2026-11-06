@@ -197,6 +197,9 @@ function setupCardPanel(): void {
   if (!button) return
 
   cardPanel = createCardPanel({
+    onOpenChange: (open) => {
+      button.classList.toggle('active', open)
+    },
     getDoc: () => {
       const doc = activeDoc()
       if (!doc || !docIsMarkdown(doc)) return null
