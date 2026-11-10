@@ -15,7 +15,9 @@ import {
   installLarkCli,
   loginFeishu,
   pullFeishuDoc,
+  pullFeishuDocs,
   pushFeishuDoc,
+  searchFeishuDocs,
 } from './services/feishu'
 import { loadConfig, patchConfig } from './services/config'
 import { trace } from './services/logger'
@@ -854,6 +856,14 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   })
 
   ipcMain.handle('feishu:pull', async (_event, doc: string) => pullFeishuDoc(doc))
+
+  ipcMain.handle('feishu:search', async (_event, query: string) => searchFeishuDocs(query))
+
+  ipcMain.handle('feishu:pullMany', async (event, refs: string[]) =>
+    pullFeishuDocs(refs, (message) => {
+      if (!event.sender.isDestroyed()) event.sender.send('feishu:progress', { phase: 'fetch', message })
+    })
+  )
   ipcMain.handle('feishu:push', async (_event, path: string, doc?: string) => pushFeishuDoc(path, doc))
 
   ipcMain.handle('app:copyImage', async (_event, dataUrl: string) => {

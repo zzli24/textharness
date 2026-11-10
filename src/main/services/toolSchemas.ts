@@ -422,7 +422,38 @@ export const TOOL_DEFS = [
         required: ['path'],
       },
     },
+  },  {
+    type: 'function' as const,
+    function: {
+      name: 'feishu_search_docs',
+      description:
+        '搜索飞书云文档/知识库/表格，返回标题、类型和可用于拉取的 URL/token。需要先登录飞书集成。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '搜索关键词（标题或正文，最多 30 个字符）' },
+        },
+        required: ['query'],
+      },
+    },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'feishu_fetch_docs',
+      description:
+        '批量把飞书文档拉到工作区「飞书/」目录。可以传 docs（URL/token 数组），也可以传 query 自动搜索后拉取前 N 篇。',
+      parameters: {
+        type: 'object',
+        properties: {
+          docs: { type: 'array', items: { type: 'string' }, description: '飞书文档 URL 或 token 列表' },
+          query: { type: 'string', description: '搜索关键词；不传 docs 时使用' },
+          limit: { type: 'number', description: '搜索后最多拉取几篇，默认 5' },
+        },
+      },
+    },
+  },
+
 ]
 
 export type ToolDef = (typeof TOOL_DEFS)[number]

@@ -9,7 +9,7 @@ import { assertInside, listTree, looksBinary } from './files'
 import { deleteSession, listSessions } from './sessions'
 import { readMemory, remember, searchMemory } from './memory'
 import { TOOL_DEFS } from './toolSchemas'
-import { pullFeishuDoc, pushFeishuDoc } from './feishu'
+import { pullFeishuDoc, pullFeishuDocs, pushFeishuDoc, searchFeishuDocs } from './feishu'
 
 export { TOOL_DEFS }
 
@@ -919,6 +919,45 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
         return {
           ok: true,
           text: matches.length ? `命中 ${matches.length} 条：\n${matches.join('\n')}` : `没有匹配「${pattern}」的内容。`,
+        }
+      }
+
+      case 'feishu_search_docs': {
+        const query = String(args['query'] ?? '').trim()
+        if (!query) return { ok: false, text: '缺少 query（搜索关键词）' }
+        const found = await searchFeishuDocs(query)
+        if (!found.ok) return { ok: false, text: `飞书搜索失败：${found.error ?? '未知错误'}` }
+        if (!found.items.length) return { ok: true, text: `没有搜到「${query}」相关的飞书文档。` }
+        const lines = found.items
+          .slice(0, 20)
+          .map((item, index) => `${index + 1}. ${item.title}${item.type ? ' [' + item.type + ']' : ''}\n   ${item.ref}`)
+        return { ok: true, text: `搜到 ${found.items.length} 篇：\n${lines.join('\n')}` }
+      }
+
+      case 'feishu_fetch_docs': {
+        const docs = Array.isArray(args['docs'])
+          ? (args['docs'] as unknown[]).map((value) => String(value)).filter(Boolean)
+          : []
+        let refs = docs
+        if (!refs.length) {
+          const query = String(args['query'] ?? '').trim()
+          if (!query) return { ok: false, text: '需要 docs 或 query 其中之一' }
+          const found = await searchFeishuDocs(query)
+          if (!found.ok) return { ok: false, text: `飞书搜索失败：${found.error ?? '未知错误'}` }
+          const limit = Math.min(Math.max(1, Number(args['limit'] ?? 5)), 20)
+          refs = found.items.slice(0, limit).map((item) => item.ref)
+          if (!refs.length) return { ok: true, text: `没有搜到「${query}」相关文档。` }
+        }
+        const results = await pullFeishuDocs(refs)
+        const ok = results.filter((item) => item.ok && item.path)
+        const failed = results.filter((item) => !item.ok)
+        const lines = ok.map((item) => `- ${item.title ?? ''} → ${displayPath(ctx, item.path as string)}`)
+        return {
+          ok: true,
+          text:
+            `已拉取 ${ok.length}/${results.length} 篇：\n` +
+            lines.join('\n') +
+            (failed.length ? `\n失败 ${failed.length} 篇：${failed[0]?.error ?? ''}` : ''),
         }
       }
 

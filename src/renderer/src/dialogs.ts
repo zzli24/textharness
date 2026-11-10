@@ -871,21 +871,122 @@ html[data-md-theme='custom'][data-theme='dark'] {
         progress.className = 'import-status'
         parts.body.appendChild(progress)
 
+        const searchRow = document.createElement('div')
+        searchRow.className = 'import-backup-row'
+        searchRow.style.marginTop = '12px'
+        const searchInput = document.createElement('input')
+        searchInput.className = 'import-select'
+        searchInput.style.flex = '1'
+        searchInput.placeholder = '搜索飞书文档（标题 / 内容关键词）'
+        const searchBtn = button('搜索')
+        searchRow.append(searchInput, searchBtn)
+        parts.body.appendChild(searchRow)
+
+        const resultsBox = document.createElement('div')
+        resultsBox.style.cssText = 'margin-top:8px;max-height:220px;overflow:auto'
+        parts.body.appendChild(resultsBox)
+
+        const selectRow = document.createElement('div')
+        selectRow.className = 'import-backup-row'
+        selectRow.style.marginTop = '6px'
+        const selectAllBtn = button('全选')
+        const pullSelectedBtn = button('拉取选中')
+        selectRow.append(selectAllBtn, pullSelectedBtn)
+        parts.body.appendChild(selectRow)
+
         const docInput = document.createElement('input')
         docInput.className = 'import-select'
         docInput.style.width = '100%'
         docInput.style.marginTop = '12px'
-        docInput.placeholder = '粘贴飞书文档 URL 或 token，例如 https://xxx.feishu.cn/docx/...'
+        docInput.placeholder = '或直接粘贴飞书文档 URL / token，例如 https://xxx.feishu.cn/docx/...'
         parts.body.appendChild(docInput)
 
         const docRow = document.createElement('div')
         docRow.className = 'import-backup-row'
         docRow.style.marginTop = '8px'
-        const pullBtn = button('拉取到工作区')
+        const pullBtn = button('拉取这个 URL')
         const pushBtn = button('回写上次拉取的文档')
         docRow.append(pullBtn, pushBtn)
         parts.body.appendChild(docRow)
 
+        let lastResults: Array<{ title: string; ref: string; type: string }> = []
+
+        const renderResults = (items: Array<{ title: string; ref: string; type: string }>): void => {
+          resultsBox.innerHTML = ''
+          lastResults = items
+          if (!items.length) {
+            resultsBox.textContent = '没有搜到文档'
+            return
+          }
+          for (const item of items) {
+            const label = document.createElement('label')
+            label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;font-size:12px'
+            const box = document.createElement('input')
+            box.type = 'checkbox'
+            box.value = item.ref
+            const title = document.createElement('span')
+            title.textContent = item.title
+            title.style.flex = '1'
+            const type = document.createElement('span')
+            type.textContent = item.type
+            type.style.color = 'var(--fg-dim)'
+            label.append(box, title, type)
+            resultsBox.appendChild(label)
+          }
+        }
+
+        const doSearch = (): void => {
+          const query = searchInput.value.trim()
+          if (!query) {
+            resultsBox.textContent = '先输入搜索关键词'
+            return
+          }
+          searchBtn.disabled = true
+          resultsBox.textContent = '搜索中…'
+          void window.th.app.feishuSearch(query).then((r) => {
+            searchBtn.disabled = false
+            if (!r.ok) {
+              resultsBox.textContent = '搜索失败：' + (r.error ?? '')
+              return
+            }
+            renderResults(r.items)
+          })
+        }
+        searchBtn.addEventListener('click', doSearch)
+        searchInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') doSearch()
+        })
+
+        selectAllBtn.addEventListener('click', () => {
+          const boxes = Array.from(resultsBox.querySelectorAll<HTMLInputElement>('input[type=checkbox]'))
+          const all = boxes.every((box) => box.checked)
+          for (const box of boxes) box.checked = !all
+        })
+
+        pullSelectedBtn.addEventListener('click', () => {
+          const refs = Array.from(resultsBox.querySelectorAll<HTMLInputElement>('input[type=checkbox]'))
+            .filter((box) => box.checked)
+            .map((box) => box.value)
+          if (!refs.length) {
+            result.textContent = '先搜索并勾选要拉取的文档'
+            return
+          }
+          pullSelectedBtn.disabled = true
+          progress.textContent = '正在拉取 ' + refs.length + ' 篇文档…'
+          void window.th.app.feishuPullMany(refs).then((items) => {
+            pullSelectedBtn.disabled = false
+            const ok = items.filter((item) => item.ok && item.path)
+            const failed = items.filter((item) => !item.ok)
+            result.textContent =
+              '已拉取 ' +
+              ok.length +
+              ' 篇' +
+              (failed.length ? '，失败 ' + failed.length + ' 篇：' + (failed[0]?.error ?? '') : '')
+            lastPulled = ok[0]?.path ?? lastPulled
+            if (ok[0]?.path) window.dispatchEvent(new CustomEvent('th:open-path', { detail: ok[0].path }))
+            document.dispatchEvent(new CustomEvent('th:refresh-tree'))
+          })
+        })
         const result = document.createElement('div')
         result.className = 'import-status'
         parts.body.appendChild(result)
@@ -908,7 +1009,7 @@ html[data-md-theme='custom'][data-theme='dark'] {
             } else if (s.configured) {
               state.textContent = '已连接飞书' + (s.identity ? '（' + s.identity + '）' : '')
             } else {
-              state.textContent = 'lark-cli 已安装，未登录：' + (s.error ?? '请点登录')
+              state.textContent = 'lark-cli 已安装，未登录，点上面的「登录飞书」'
             }
           })
         }
@@ -954,6 +1055,7 @@ html[data-md-theme='custom'][data-theme='dark'] {
             }
             lastPulled = r.path ?? null
             result.textContent = '已拉取「' + (r.title ?? '') + '」到 ' + (r.path ?? '')
+            if (r.path) window.dispatchEvent(new CustomEvent('th:open-path', { detail: r.path }))
             document.dispatchEvent(new CustomEvent('th:refresh-tree'))
           })
         })

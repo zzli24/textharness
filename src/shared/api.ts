@@ -248,6 +248,14 @@ export interface ThApi {
       revision?: number
       error?: string
     }>
+    feishuSearch(query: string): Promise<{
+      ok: boolean
+      items: Array<{ title: string; ref: string; type: string }>
+      error?: string
+    }>
+    feishuPullMany(refs: string[]): Promise<
+      Array<{ ok: boolean; path?: string; title?: string; error?: string }>
+    >
     feishuPush(path: string, doc?: string): Promise<{ ok: boolean; revision?: number; error?: string }>
     onFeishuProgress(cb: (progress: { phase: string; message: string; url?: string }) => void): () => void
     /** OneNote 导出环境状态 */

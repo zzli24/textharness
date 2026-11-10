@@ -280,6 +280,16 @@ const api = {
         revision?: number
         error?: string
       }>,
+    feishuSearch: (query: string) =>
+      ipcRenderer.invoke('feishu:search', query) as Promise<{
+        ok: boolean
+        items: Array<{ title: string; ref: string; type: string }>
+        error?: string
+      }>,
+    feishuPullMany: (refs: string[]) =>
+      ipcRenderer.invoke('feishu:pullMany', refs) as Promise<
+        Array<{ ok: boolean; path?: string; title?: string; error?: string }>
+      >,
     feishuPush: (path: string, doc?: string) =>
       ipcRenderer.invoke('feishu:push', path, doc) as Promise<{ ok: boolean; revision?: number; error?: string }>,
     onFeishuProgress: (cb: (progress: { phase: string; message: string; url?: string }) => void) => {

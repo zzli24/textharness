@@ -242,6 +242,71 @@ function titleFromMarkdown(markdown: string, fallback: string): string {
   return first ? first.replace(/^#+\s*/, '').trim() : fallback
 }
 
+
+export interface FeishuSearchItem {
+  title: string
+  ref: string
+  type: string
+}
+
+function stripHighlight(text: string): string {
+  return text.replace(/<\/?hb?>/g, '').replace(/<[^>]+>/g, '').trim()
+}
+
+function findResultArray(value: unknown): Array<Record<string, unknown>> {
+  if (!value || typeof value !== 'object') return []
+  const obj = value as Record<string, unknown>
+  if (Array.isArray(obj['results'])) return obj['results'] as Array<Record<string, unknown>>
+  for (const child of Object.values(obj)) {
+    const found = findResultArray(child)
+    if (found.length) return found
+  }
+  return []
+}
+
+/** 搜索云空间里的文档/Wiki/表格；返回可直接喂给 docs +fetch 的 ref */
+export async function searchFeishuDocs(
+  query: string
+): Promise<{ ok: boolean; items: FeishuSearchItem[]; error?: string }> {
+  const result = await runLarkCli(
+    ['drive', '+search', '--query', query, '--format', 'json', '--page-size', '20', '--as', 'user'],
+    { timeoutMs: 60_000 }
+  )
+  const data = extractJson(result.stdout + '\n' + result.stderr)
+  const results = findResultArray(data)
+  if (result.code !== 0 && !results.length) {
+    return { ok: false, items: [], error: result.stderr.slice(-300) || '搜索失败' }
+  }
+  const items: FeishuSearchItem[] = []
+  for (const item of results) {
+    const title = stripHighlight(String(item['title'] ?? item['title_highlighted'] ?? '未命名'))
+    const url = String(item['url'] ?? item['doc_url'] ?? item['open_url'] ?? '')
+    const token = String(item['token'] ?? item['obj_token'] ?? item['doc_token'] ?? '')
+    const type = String(item['doc_type'] ?? item['type'] ?? '')
+    const ref = url || token
+    if (ref) items.push({ title, ref, type })
+  }
+  return { ok: true, items }
+}
+
+/** 批量拉取；单个失败不阻断其余 */
+export async function pullFeishuDocs(
+  refs: string[],
+  onProgress?: (message: string, index: number, total: number) => void
+): Promise<Array<{ ok: boolean; path?: string; title?: string; error?: string }>> {
+  const results: Array<{ ok: boolean; path?: string; title?: string; error?: string }> = []
+  for (let i = 0; i < refs.length; i += 1) {
+    onProgress?.('正在拉取 ' + (i + 1) + '/' + refs.length + '…', i + 1, refs.length)
+    const picked = await pullFeishuDoc(refs[i])
+    results.push({
+      ok: picked.ok,
+      path: picked.path,
+      title: picked.title,
+      error: picked.error,
+    })
+  }
+  return results
+}
 export async function fetchFeishuDoc(doc: string): Promise<FeishuDocument> {
   const result = await runLarkCli(
     ['docs', '+fetch', '--doc', doc, '--doc-format', 'markdown', '--as', 'user'],
