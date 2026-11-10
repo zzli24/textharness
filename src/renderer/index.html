@@ -48,6 +48,12 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="5.5"/><path d="M15 15l4.5 4.5"/></svg>
           </button>
         </div>
+        <div id="source-tabs" class="source-tabs" role="tablist" aria-label="文件来源">
+          <button type="button" class="source-tab on" data-source="local" role="tab">本地</button>
+          <button type="button" class="source-tab" data-source="feishu" role="tab">飞书</button>
+          <button type="button" class="source-tab" data-source="ding" role="tab">钉钉</button>
+        </div>
+        <button type="button" id="btn-feishu-panel" class="source-action" hidden>搜索 / 拉取飞书文档…</button>
         <div id="tree" class="tree"></div>
 
       </aside>

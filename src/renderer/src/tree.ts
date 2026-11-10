@@ -9,6 +9,8 @@ export interface TreeOptions {
 export interface TreeApi {
   refresh(): Promise<void>
   setFilter(text: string): void
+  /** 只显示某个子目录（如「飞书」）；scope 为空时显示本地，排除指定顶层目录 */
+  setScope(scope: string, options?: { exclude?: string[]; emptyText?: string }): void
   /** 展开某个文件的所有上级目录（打开外部/深层文件时用） */
   revealPath(path: string): void
   closeMenu(): void
@@ -43,6 +45,9 @@ function errorMessage(err: unknown): string {
 export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
   let all: TreeNode[] = []
   let filter = ''
+  let scope = ''
+  let scopeExclude: string[] = []
+  let emptyText = '（空目录）'
   let menu: HTMLElement | null = null
   const collapsed = new Set<string>()
   /** 第一次拿到目录树时把所有文件夹折叠起来：不然一屏全是展开的，很乱 */
@@ -53,12 +58,38 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
     menu = null
   }
 
+  function scopeBase(): string {
+    const root = opts.root().replace(/[\\/]+$/, '')
+    if (!scope) return root
+    const sep = root.includes('\\') ? '\\' : '/'
+    return root + sep + scope
+  }
+
+  function inScope(path: string): boolean {
+    const root = opts.root().replace(/[\\/]+$/, '')
+    if (scope) {
+      const base = scopeBase()
+      return path === base || path.startsWith(base + (base.includes('\\') ? '\\' : '/'))
+    }
+    if (!scopeExclude.length) return true
+    const sep = root.includes('\\') ? '\\' : '/'
+    if (path === root) return true
+    const rel = path.slice(root.length + 1)
+    const top = rel.split(/[\\/]/)[0]
+    return !scopeExclude.includes(top)
+  }
+
+  function scopedAll(): TreeNode[] {
+    return all.filter((node) => inScope(node.path))
+  }
+
   function visibleSet(): Set<string> {
-    if (!filter) return new Set(all.map((n) => n.path))
+    const baseAll = scopedAll()
+    if (!filter) return new Set(baseAll.map((n) => n.path))
     const keep = new Set<string>()
-    const byPath = new Map(all.map((n) => [n.path, n]))
+    const byPath = new Map(baseAll.map((n) => [n.path, n]))
     const needle = filter.toLowerCase()
-    for (const node of all) {
+    for (const node of baseAll) {
       if (!node.name.toLowerCase().includes(needle)) continue
       keep.add(node.path)
       let cursor = parentOf(node.path)
@@ -73,8 +104,9 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
   function render(): void {
     host.textContent = ''
     const visible = visibleSet()
+    const baseAll = scopedAll()
     const children = new Map<string, TreeNode[]>()
-    for (const node of all) {
+    for (const node of baseAll) {
       if (!visible.has(node.path)) continue
       const parent = parentOf(node.path)
       const list = children.get(parent)
@@ -131,12 +163,14 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
       }
     }
 
-    walk(opts.root(), 0)
-    if (all.length === 0) {
+    const root = opts.root().replace(/[\\/]+$/, '')
+    const sep = root.includes('\\') ? '\\' : '/'
+    walk(scope ? root + sep + scope : root, 0)
+    if (baseAll.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'row is-file'
       empty.style.paddingLeft = '12px'
-      empty.textContent = '（空目录）'
+      empty.textContent = emptyText
       host.appendChild(empty)
     }
   }
@@ -205,6 +239,17 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
     if (changed) render()
   }
 
-  const api: TreeApi = { refresh, setFilter, revealPath, closeMenu }
+  const api: TreeApi = {
+    refresh,
+    setFilter,
+    setScope(nextScope: string, options?: { exclude?: string[]; emptyText?: string }) {
+      scope = nextScope
+      scopeExclude = options?.exclude ?? []
+      emptyText = options?.emptyText ?? '（空目录）'
+      render()
+    },
+    revealPath,
+    closeMenu,
+  }
   return api
 }

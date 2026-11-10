@@ -439,6 +439,16 @@ function makeDoc(path: string | null, text: string, meta: FileMeta, title: strin
   return doc
 }
 
+function applyFeishuFont(path: string | null): void {
+  const root = (cfg.workspaceRoot ?? '').replace(/[\\/]+$/, '')
+  const normalized = (path ?? '').replace(/\\/g, '/')
+  const normalizedRoot = root.replace(/\\/g, '/')
+  const rel = normalized.startsWith(normalizedRoot + '/')
+    ? normalized.slice(normalizedRoot.length + 1)
+    : ''
+  document.body.classList.toggle('th-feishu-doc', rel.split('/')[0] === '飞书')
+}
+
 function openDoc(doc: Doc): void {
   // 切走之前，把当前编辑器状态存回上一篇文档（表格文档不归编辑器管）
   const previous = activeDoc()
@@ -446,6 +456,7 @@ function openDoc(doc: Doc): void {
 
   if (!docs.includes(doc)) docs.push(doc)
   activeId = doc.id
+  applyFeishuFont(doc.path)
 
   if (doc.kind === 'grid' && !doc.srcView) {
     openGridDoc(doc)
@@ -741,6 +752,27 @@ async function renameDoc(doc: Doc): Promise<void> {
     renderTabs()
     updateStatus()
     void tree.refresh()
+  const sourceTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.source-tab'))
+  const feishuPanelBtn = $('btn-feishu-panel')
+  const applySource = (source: string): void => {
+    for (const tab of sourceTabs) tab.classList.toggle('on', tab.dataset['source'] === source)
+    feishuPanelBtn.hidden = source !== 'feishu'
+    if (source === 'feishu') {
+      tree.setScope('飞书', { emptyText: '（还没有拉取飞书文档，点上面的按钮搜索）' })
+    } else if (source === 'ding') {
+      tree.setScope('钉钉', { emptyText: '（钉钉集成即将支持）' })
+    } else {
+      tree.setScope('', { exclude: ['飞书', '钉钉'] })
+    }
+  }
+  for (const tab of sourceTabs) {
+    tab.addEventListener('click', () => applySource(tab.dataset['source'] ?? 'local'))
+  }
+  feishuPanelBtn.addEventListener('click', () => {
+    localStorage.setItem('th.settings.section', 'integrations')
+    void openSettingsFlow()
+  })
+  applySource('local')
     schedulePersist()
     toast(`已重命名为 ${name}`)
   } catch (err) {
@@ -991,6 +1023,7 @@ async function openImagePreview(path: string): Promise<void> {
 }
 
 async function openPath(path: string, line?: number): Promise<void> {
+  applyFeishuFont(path)
   // 图片走预览，不进编辑器（二进制内容会报错）
   if (IMAGE_EXT.test(path)) {
     await openImagePreview(path)
