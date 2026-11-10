@@ -205,7 +205,8 @@ export async function loginFeishu(
 
   opened = false
   onProgress({ phase: 'login', message: '正在登录飞书账号…' })
-  const login = await runLarkCli(['auth', 'login', '--recommend'], {
+  // 只申请当前功能需要的域：文档读写 + 云空间读取；不要把 CLI 的全部 51 项权限都要过来
+  const login = await runLarkCli(['auth', 'login', '--domain', 'docs,drive'], {
     timeoutMs: 300_000,
     onLine: handleLine,
   })
