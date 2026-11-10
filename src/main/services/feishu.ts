@@ -415,6 +415,11 @@ function sheetCellText(cell: unknown): string {
 function findSheetValues(node: unknown): unknown[][] | null {
   if (Array.isArray(node)) {
     if (node.length && Array.isArray(node[0])) return node as unknown[][]
+    // ranges 数组：元素是对象，不是行数组；要逐个往下找
+    for (const item of node) {
+      const found = findSheetValues(item)
+      if (found) return found
+    }
     return null
   }
   if (!node || typeof node !== 'object') return null
