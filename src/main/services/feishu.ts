@@ -423,6 +423,11 @@ function findSheetValues(node: unknown): unknown[][] | null {
     const values = obj['values']
     if (values.length && Array.isArray(values[0])) return values as unknown[][]
   }
+  // +cells-get 返回的是 ranges[].cells：二维数组，每个单元格是 { value, cell_styles }
+  if (Array.isArray(obj['cells'])) {
+    const cells = obj['cells']
+    if (cells.length && Array.isArray(cells[0])) return cells as unknown[][]
+  }
   for (const child of Object.values(obj)) {
     const found = findSheetValues(child)
     if (found) return found
