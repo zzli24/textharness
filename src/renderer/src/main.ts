@@ -752,27 +752,6 @@ async function renameDoc(doc: Doc): Promise<void> {
     renderTabs()
     updateStatus()
     void tree.refresh()
-  const sourceTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.source-tab'))
-  const feishuPanelBtn = $('btn-feishu-panel')
-  const applySource = (source: string): void => {
-    for (const tab of sourceTabs) tab.classList.toggle('on', tab.dataset['source'] === source)
-    feishuPanelBtn.hidden = source !== 'feishu'
-    if (source === 'feishu') {
-      tree.setScope('飞书', { emptyText: '（还没有拉取飞书文档，点上面的按钮搜索）' })
-    } else if (source === 'ding') {
-      tree.setScope('钉钉', { emptyText: '（钉钉集成即将支持）' })
-    } else {
-      tree.setScope('', { exclude: ['飞书', '钉钉'] })
-    }
-  }
-  for (const tab of sourceTabs) {
-    tab.addEventListener('click', () => applySource(tab.dataset['source'] ?? 'local'))
-  }
-  feishuPanelBtn.addEventListener('click', () => {
-    localStorage.setItem('th.settings.section', 'integrations')
-    void openSettingsFlow()
-  })
-  applySource('local')
     schedulePersist()
     toast(`已重命名为 ${name}`)
   } catch (err) {
@@ -2652,6 +2631,26 @@ async function boot(): Promise<void> {
     onMenu: (node, event, api) => void handleTreeMenu(node, event, api),
   })
   void tree.refresh()
+
+  const sourceTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.source-tab'))
+  const feishuPanelBtn = $('btn-feishu-panel')
+  const applySource = (source: string): void => {
+    for (const tab of sourceTabs) tab.classList.toggle('on', tab.dataset['source'] === source)
+    feishuPanelBtn.hidden = source !== 'feishu'
+    if (source === 'feishu') {
+      tree.setScope('飞书', { emptyText: '（还没有拉取飞书文档，点上面的按钮搜索）' })
+    } else {
+      tree.setScope('', { exclude: ['飞书', '钉钉'] })
+    }
+  }
+  for (const tab of sourceTabs) {
+    tab.addEventListener('click', () => applySource(tab.dataset['source'] ?? 'local'))
+  }
+  feishuPanelBtn.addEventListener('click', () => {
+    localStorage.setItem('th.settings.section', 'integrations')
+    void openSettingsFlow()
+  })
+  applySource('local')
 
   const restored = await restoreEditorState()
   if (!restored) {
