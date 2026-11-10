@@ -29,6 +29,8 @@ export interface FeishuStatus {
   appId?: string
   version?: string
   identity?: string
+  sheetsReady?: boolean
+  sheetsScopeUrl?: string
   error?: string
 }
 
@@ -147,7 +149,13 @@ export async function feishuStatus(): Promise<FeishuStatus> {
         ok?: boolean
         identity?: string
         identities?: {
-          user?: { status?: string; tokenStatus?: string; userName?: string; available?: boolean }
+          user?: {
+            status?: string
+            tokenStatus?: string
+            userName?: string
+            available?: boolean
+            scope?: string
+          }
         }
         error?: { message?: string }
       }
@@ -156,6 +164,7 @@ export async function feishuStatus(): Promise<FeishuStatus> {
   const user = data?.identities?.user
   const configured =
     data?.ok === true || user?.status === 'ready' || user?.tokenStatus === 'valid'
+  const sheetsReady = (user?.scope ?? '').includes('sheets:spreadsheet:read')
   return {
     installed: true,
     configured,
@@ -163,6 +172,12 @@ export async function feishuStatus(): Promise<FeishuStatus> {
     version: CLI_VERSION,
     appId: configData?.appId,
     identity: user?.userName ?? data?.identity,
+    sheetsReady,
+    sheetsScopeUrl: configData?.appId
+      ? 'https://open.feishu.cn/page/scope-apply?clientID=' +
+        encodeURIComponent(configData.appId) +
+        '&scopes=sheets%3Aspreadsheet%3Aread'
+      : undefined,
     error: configured ? undefined : data?.error?.message ?? result.stderr.slice(0, 200),
   }
 }
@@ -208,7 +223,7 @@ export async function loginFeishu(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!findLarkCli()) return { ok: false, error: 'lark-cli 未安装' }
   const status = await feishuStatus()
-  if (status.configured) return { ok: true }
+  if (status.configured && status.sheetsReady !== false) return { ok: true }
 
   let opened = false
   const handleLine = (line: string): void => {
@@ -237,8 +252,8 @@ export async function loginFeishu(
 
   opened = false
   onProgress({ phase: 'login', message: '正在登录飞书账号…' })
-  // 只申请当前功能需要的域：文档读写 + 云空间读取；不要把 CLI 的全部 51 项权限都要过来
-  const login = await runLarkCli(['auth', 'login', '--domain', 'docs,drive'], {
+  // 只申请当前功能需要的域：文档/云空间/表格读取；不要把 CLI 的全部权限都要过来
+  const login = await runLarkCli(['auth', 'login', '--domain', 'docs,drive,sheets'], {
     timeoutMs: 300_000,
     onLine: handleLine,
   })
@@ -378,6 +393,115 @@ export async function pullFeishuDocs(
   }
   return results
 }
+
+
+function sheetCellText(cell: unknown): string {
+  if (cell === null || cell === undefined) return ''
+  if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') {
+    return String(cell)
+  }
+  if (typeof cell !== 'object') return ''
+  const obj = cell as Record<string, unknown>
+  if (typeof obj['text'] === 'string') return obj['text']
+  if (typeof obj['value'] === 'string' || typeof obj['value'] === 'number') return String(obj['value'])
+  if (Array.isArray(obj['segments'])) {
+    return obj['segments']
+      .map((segment) => (segment && typeof segment === 'object' ? String((segment as Record<string, unknown>)['text'] ?? '') : ''))
+      .join('')
+  }
+  return ''
+}
+
+function findSheetValues(node: unknown): unknown[][] | null {
+  if (Array.isArray(node)) {
+    if (node.length && Array.isArray(node[0])) return node as unknown[][]
+    return null
+  }
+  if (!node || typeof node !== 'object') return null
+  const obj = node as Record<string, unknown>
+  if (Array.isArray(obj['values'])) {
+    const values = obj['values']
+    if (values.length && Array.isArray(values[0])) return values as unknown[][]
+  }
+  for (const child of Object.values(obj)) {
+    const found = findSheetValues(child)
+    if (found) return found
+  }
+  return null
+}
+
+function tableToMarkdown(values: unknown[][]): string {
+  const rows = values.map((row) => row.map((cell) => sheetCellText(cell)))
+  while (rows.length && rows[rows.length - 1].every((cell) => !cell.trim())) rows.pop()
+  if (!rows.length) return '> 飞书内嵌表格没有数据'
+  const cols = Math.max(...rows.map((row) => row.length))
+  for (const row of rows) while (row.length < cols) row.push('')
+  const clean = (text: string): string => text.replace(/\|/g, '\\|').replace(/\n+/g, '<br>').trim()
+  const header = rows[0].map((cell, index) => clean(cell) || '列' + (index + 1))
+  const body = rows.slice(1, 101)
+  const lines = [
+    '| ' + header.join(' | ') + ' |',
+    '| ' + header.map(() => '---').join(' | ') + ' |',
+    ...body.map((row) => '| ' + row.map(clean).join(' | ') + ' |'),
+  ]
+  if (rows.length > 101) lines.push('', '> 表格超过 100 行，已截断')
+  return lines.join('\n')
+}
+
+async function readEmbeddedSheet(token: string, sheetId: string): Promise<string> {
+  const result = await runLarkCli(
+    [
+      'sheets',
+      '+cells-get',
+      '--spreadsheet-token',
+      token,
+      '--sheet-id',
+      sheetId,
+      '--range',
+      'A1:Z300',
+      '--format',
+      'json',
+      '--as',
+      'user',
+    ],
+    { timeoutMs: 60_000 }
+  )
+  const data = extractJson(result.stdout + '\n' + result.stderr)
+  const values = findSheetValues(data)
+  if (!values) {
+    const error = extractJson(result.stdout + '\n' + result.stderr) as
+      | { error?: { message?: string; missing_scopes?: string[] } }
+      | null
+    const missing = error?.error?.missing_scopes?.join(', ')
+    throw new Error(
+      missing ? '缺少表格权限（' + missing + '），请重新点「登录飞书」授权' : '表格读取失败'
+    )
+  }
+  return tableToMarkdown(values)
+}
+
+async function expandEmbeddedSheets(markdown: string): Promise<string> {
+  const matches = Array.from(markdown.matchAll(/<sheet\b([^>]*?)(?:\/>|><\/sheet>)/g))
+  let expanded = markdown
+  for (const match of matches.slice(0, 8)) {
+    const attrs = match[1]
+    const token = /token="([^"]+)"/.exec(attrs)?.[1]
+    const sheetId = /sheet-id="([^"]+)"/.exec(attrs)?.[1]
+    if (!token || !sheetId) continue
+    try {
+      const table = await readEmbeddedSheet(token, sheetId)
+      expanded = expanded.replace(match[0], '\n\n' + table + '\n\n')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      expanded = expanded.replace(
+        match[0],
+        '\n\n> 内嵌表格读取失败：' + message + '\n\n'
+      )
+    }
+  }
+  return expanded
+}
+
 export async function fetchFeishuDoc(doc: string): Promise<FeishuDocument> {
   const result = await runLarkCli(
     ['docs', '+fetch', '--doc', doc, '--doc-format', 'markdown', '--as', 'user'],
@@ -429,10 +553,11 @@ export async function pullFeishuDoc(
   const config = loadConfig()
   try {
     const fetched = await fetchFeishuDoc(doc)
+    const content = await expandEmbeddedSheets(fetched.content)
     const dir = join(config.workspaceRoot, '飞书')
     await fs.mkdir(dir, { recursive: true })
     const file = join(dir, safeFileName(fetched.title) + '.md')
-    await fs.writeFile(file, fetched.content, 'utf8')
+    await fs.writeFile(file, content, 'utf8')
     const map = await readMap(config.workspaceRoot)
     map.docs[fetched.token] = {
       path: file,

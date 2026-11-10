@@ -237,6 +237,8 @@ export interface ThApi {
       configured: boolean
       cliPath?: string
       appId?: string
+      sheetsReady?: boolean
+      sheetsScopeUrl?: string
       identity?: string
       error?: string
     }>

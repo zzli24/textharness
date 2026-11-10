@@ -844,7 +844,9 @@ html[data-md-theme='custom'][data-theme='dark'] {
             return
           }
           statusLine.textContent = status.configured
-            ? '已连接飞书' + (status.appId ? '（应用 ' + status.appId + '）' : '') + '：可以直接拉取/回写文档。'
+            ? '已连接飞书' +
+              (status.appId ? '（应用 ' + status.appId + '）' : '') +
+              (status.sheetsReady ? '：可以直接拉取/回写文档。' : '：内嵌表格需要重新登录授权。')
             : 'lark-cli 已安装，但还没登录飞书。点开卡片完成登录。'
         })
       }
@@ -865,7 +867,9 @@ html[data-md-theme='custom'][data-theme='dark'] {
         const loginBtn = button('登录飞书', true)
         const refreshBtn = button('刷新状态')
         const switchAppBtn = button('切换应用')
-        row.append(installBtn, loginBtn, switchAppBtn, refreshBtn)
+        const sheetsScopeBtn = button('开通表格权限')
+        sheetsScopeBtn.hidden = true
+        row.append(installBtn, loginBtn, switchAppBtn, sheetsScopeBtn, refreshBtn)
         parts.body.appendChild(row)
 
         const progress = document.createElement('div')
@@ -1003,15 +1007,19 @@ html[data-md-theme='custom'][data-theme='dark'] {
           if (event.url) progress.textContent += '\n' + event.url
         })
 
+        let sheetsScopeUrl = ''
         const refresh = (): void => {
           void window.th.app.feishuStatus().then((s) => {
             if (!s.installed) {
               state.textContent = 'lark-cli 未安装'
             } else if (s.configured) {
+              sheetsScopeUrl = s.sheetsScopeUrl ?? ''
+              sheetsScopeBtn.hidden = s.sheetsReady === true
               state.textContent =
                 '已连接飞书' +
                 (s.appId ? '（应用 ' + s.appId + '）' : '') +
-                (s.identity ? '（用户 ' + s.identity + '）' : '')
+                (s.identity ? '（用户 ' + s.identity + '）' : '') +
+                (s.sheetsReady ? '' : '；内嵌表格还没开通，点「开通表格权限」')
             } else {
               state.textContent = 'lark-cli 已安装，未登录，点上面的「登录飞书」'
             }
@@ -1135,6 +1143,13 @@ html[data-md-theme='custom'][data-theme='dark'] {
         })
 
         refreshBtn.addEventListener('click', refresh)
+        sheetsScopeBtn.addEventListener('click', () => {
+          if (!sheetsScopeUrl) {
+            progress.textContent = '先登录一次，拿到应用 ID 后再开通表格权限'
+            return
+          }
+          void window.th.app.openUrl(sheetsScopeUrl)
+        })
 
         pullBtn.addEventListener('click', () => {
           const doc = docInput.value.trim()

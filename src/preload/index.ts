@@ -268,6 +268,8 @@ const api = {
         configured: boolean
         cliPath?: string
         appId?: string
+        sheetsReady?: boolean
+        sheetsScopeUrl?: string
         identity?: string
         error?: string
       }>,
