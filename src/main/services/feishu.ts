@@ -143,16 +143,27 @@ export async function feishuStatus(): Promise<FeishuStatus> {
     | { appId?: string }
     | null
   const data = extractJson(result.stdout + '\n' + result.stderr) as
-    | { ok?: boolean; identity?: string; error?: { message?: string } }
+    | {
+        ok?: boolean
+        identity?: string
+        identities?: {
+          user?: { status?: string; tokenStatus?: string; userName?: string; available?: boolean }
+        }
+        error?: { message?: string }
+      }
     | null
+  // auth status 成功时不一定带 ok:true，而是 identities.user.status = ready / tokenStatus = valid
+  const user = data?.identities?.user
+  const configured =
+    data?.ok === true || user?.status === 'ready' || user?.tokenStatus === 'valid'
   return {
     installed: true,
-    configured: data?.ok === true,
+    configured,
     cliPath: cli,
     version: CLI_VERSION,
     appId: configData?.appId,
-    identity: data?.identity,
-    error: data?.ok === true ? undefined : data?.error?.message ?? result.stderr.slice(0, 200),
+    identity: user?.userName ?? data?.identity,
+    error: configured ? undefined : data?.error?.message ?? result.stderr.slice(0, 200),
   }
 }
 
