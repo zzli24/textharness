@@ -175,6 +175,11 @@ export async function installLarkCli(
 }
 
 /** config init + auth login：把授权 URL 交给浏览器，等用户完成 */
+async function hasFeishuApp(): Promise<boolean> {
+  const result = await runLarkCli(['config', 'show'], { timeoutMs: 15_000 })
+  const data = extractJson(result.stdout + '\n' + result.stderr) as { appId?: string } | null
+  return typeof data?.appId === 'string' && data.appId.startsWith('cli_')
+}
 export async function loginFeishu(
   onProgress: (progress: FeishuProgress) => void
 ): Promise<{ ok: boolean; error?: string }> {
@@ -194,13 +199,17 @@ export async function loginFeishu(
     }
   }
 
-  onProgress({ phase: 'config', message: '正在初始化飞书应用（首次需要创建）…' })
-  const init = await runLarkCli(['config', 'init', '--new'], {
-    timeoutMs: 300_000,
-    onLine: handleLine,
-  })
-  if (init.code !== 0) {
-    return { ok: false, error: (init.stderr || init.stdout).slice(-400) || '初始化失败' }
+  if (await hasFeishuApp()) {
+    onProgress({ phase: 'config', message: '已检测到飞书应用，跳过创建，直接登录…' })
+  } else {
+    onProgress({ phase: 'config', message: '正在初始化飞书应用（首次需要创建）…' })
+    const init = await runLarkCli(['config', 'init', '--new'], {
+      timeoutMs: 300_000,
+      onLine: handleLine,
+    })
+    if (init.code !== 0) {
+      return { ok: false, error: (init.stderr || init.stdout).slice(-400) || '初始化失败' }
+    }
   }
 
   opened = false
