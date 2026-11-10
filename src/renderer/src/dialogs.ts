@@ -844,7 +844,7 @@ html[data-md-theme='custom'][data-theme='dark'] {
             return
           }
           statusLine.textContent = status.configured
-            ? '已连接飞书' + (status.identity ? '（' + status.identity + '）' : '') + '：可以直接拉取/回写文档。'
+            ? '已连接飞书' + (status.appId ? '（应用 ' + status.appId + '）' : '') + '：可以直接拉取/回写文档。'
             : 'lark-cli 已安装，但还没登录飞书。点开卡片完成登录。'
         })
       }
@@ -864,7 +864,8 @@ html[data-md-theme='custom'][data-theme='dark'] {
         const installBtn = button('安装 / 升级 CLI')
         const loginBtn = button('登录飞书', true)
         const refreshBtn = button('刷新状态')
-        row.append(installBtn, loginBtn, refreshBtn)
+        const switchAppBtn = button('切换应用')
+        row.append(installBtn, loginBtn, switchAppBtn, refreshBtn)
         parts.body.appendChild(row)
 
         const progress = document.createElement('div')
@@ -1007,7 +1008,10 @@ html[data-md-theme='custom'][data-theme='dark'] {
             if (!s.installed) {
               state.textContent = 'lark-cli 未安装'
             } else if (s.configured) {
-              state.textContent = '已连接飞书' + (s.identity ? '（' + s.identity + '）' : '')
+              state.textContent =
+                '已连接飞书' +
+                (s.appId ? '（应用 ' + s.appId + '）' : '') +
+                (s.identity ? '（用户 ' + s.identity + '）' : '')
             } else {
               state.textContent = 'lark-cli 已安装，未登录，点上面的「登录飞书」'
             }
@@ -1025,6 +1029,99 @@ html[data-md-theme='custom'][data-theme='dark'] {
             refreshStatus()
           })
         })
+
+
+        const openSwitchAppDialog = (): void => {
+          const parts = createModal('切换飞书应用', { tall: true })
+          const tip = document.createElement('p')
+          tip.className = 'set-note set-note-flush'
+          tip.textContent =
+            '切换会清除当前应用绑定和登录状态；本地已经拉取的 Markdown 不受影响。切换后需要重新授权。'
+          parts.body.appendChild(tip)
+
+          const progress = document.createElement('div')
+          progress.className = 'import-status'
+          parts.body.appendChild(progress)
+
+          const createBtn = button('创建新应用', true)
+          parts.body.appendChild(createBtn)
+
+          const divider = document.createElement('p')
+          divider.className = 'set-note set-note-flush'
+          divider.textContent = '或绑定一个已有的飞书自建应用：'
+          parts.body.appendChild(divider)
+
+          const idInput = document.createElement('input')
+          idInput.className = 'import-select'
+          idInput.style.width = '100%'
+          idInput.placeholder = 'App ID，例如 cli_axxxxxxxx'
+          parts.body.appendChild(idInput)
+
+          const secretInput = document.createElement('input')
+          secretInput.className = 'import-select'
+          secretInput.style.width = '100%'
+          secretInput.style.marginTop = '8px'
+          secretInput.type = 'password'
+          secretInput.placeholder = 'App Secret（只通过 stdin 交给 CLI，不落盘）'
+          parts.body.appendChild(secretInput)
+
+          const bindBtn = button('绑定并登录')
+          bindBtn.style.marginTop = '8px'
+          parts.body.appendChild(bindBtn)
+
+          const offSwitch = window.th.app.onFeishuProgress((event) => {
+            progress.textContent = event.message
+            if (event.url) progress.textContent += '\n' + event.url
+          })
+
+          const run = (mode: 'new' | 'bind'): void => {
+            const appId = idInput.value.trim()
+            const appSecret = secretInput.value.trim()
+            if (mode === 'bind' && (!appId || !appSecret)) {
+              progress.textContent = '绑定已有应用需要填 App ID 和 App Secret'
+              return
+            }
+            void confirmDialog({
+              title: '切换飞书应用',
+              message: '会清除当前应用绑定和登录状态，确定继续？',
+              detail: mode === 'new' ? '创建新应用' : '绑定 ' + appId,
+              buttons: ['取消', '继续'],
+              defaultId: 0,
+              cancelId: 0,
+            }).then((choice) => {
+              if (choice !== 1) return
+              createBtn.disabled = true
+              bindBtn.disabled = true
+              progress.textContent = mode === 'new' ? '正在打开应用创建页面…' : '正在绑定应用…'
+              void window.th.app.feishuSwitchApp(mode, { appId, appSecret }).then((r) => {
+                createBtn.disabled = false
+                bindBtn.disabled = false
+                secretInput.value = ''
+                if (!r.ok) {
+                  progress.textContent = '切换失败：' + (r.error ?? '未知错误')
+                  return
+                }
+                progress.textContent = '应用已切换并登录完成'
+                offSwitch()
+                refresh()
+                refreshStatus()
+                window.setTimeout(() => parts.close(), 800)
+              })
+            })
+          }
+
+          createBtn.addEventListener('click', () => run('new'))
+          bindBtn.addEventListener('click', () => run('bind'))
+
+          const closeBtn = button('关闭')
+          closeBtn.addEventListener('click', () => {
+            offSwitch()
+            parts.close()
+          })
+          parts.foot.appendChild(closeBtn)
+        }
+
+        switchAppBtn.addEventListener('click', openSwitchAppDialog)
 
         loginBtn.addEventListener('click', () => {
           loginBtn.disabled = true

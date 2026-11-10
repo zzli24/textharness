@@ -236,6 +236,7 @@ export interface ThApi {
       installed: boolean
       configured: boolean
       cliPath?: string
+      appId?: string
       identity?: string
       error?: string
     }>
@@ -246,6 +247,10 @@ export interface ThApi {
       path?: string
       title?: string
       revision?: number
+      error?: string
+    }>
+    feishuSwitchApp(mode: 'new' | 'bind', payload: { appId?: string; appSecret?: string }): Promise<{
+      ok: boolean
       error?: string
     }>
     feishuSearch(query: string): Promise<{

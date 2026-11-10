@@ -18,6 +18,7 @@ import {
   pullFeishuDocs,
   pushFeishuDoc,
   searchFeishuDocs,
+  switchFeishuApp,
 } from './services/feishu'
 import { loadConfig, patchConfig } from './services/config'
 import { trace } from './services/logger'
@@ -856,6 +857,13 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
   })
 
   ipcMain.handle('feishu:pull', async (_event, doc: string) => pullFeishuDoc(doc))
+
+  ipcMain.handle('feishu:switchApp', async (event, mode: 'new' | 'bind', payload: { appId?: string; appSecret?: string }) => {
+    const send = (progress: unknown): void => {
+      if (!event.sender.isDestroyed()) event.sender.send('feishu:progress', progress)
+    }
+    return switchFeishuApp(mode, payload ?? {}, send as never)
+  })
 
   ipcMain.handle('feishu:search', async (_event, query: string) => searchFeishuDocs(query))
 

@@ -26,6 +26,7 @@ export interface FeishuStatus {
   installed: boolean
   configured: boolean
   cliPath?: string
+  appId?: string
   version?: string
   identity?: string
   error?: string
@@ -63,7 +64,7 @@ function quoteArg(value: string): string {
 /** 跑一条 lark-cli 命令；Windows 的 .cmd 需要经过 cmd.exe */
 export function runLarkCli(
   args: string[],
-  options: { timeoutMs?: number; onLine?: (line: string) => void; cwd?: string } = {}
+  options: { timeoutMs?: number; onLine?: (line: string) => void; cwd?: string; input?: string } = {}
 ): Promise<CliResult> {
   const cli = findLarkCli()
   if (!cli) return Promise.resolve({ code: -1, stdout: '', stderr: 'lark-cli 未安装' })
@@ -75,6 +76,10 @@ export function runLarkCli(
       process.platform === 'win32'
         ? spawn('cmd.exe', ['/d', '/s', '/c', command], { windowsHide: true, cwd: options.cwd })
         : spawn(cli, args, { windowsHide: true, cwd: options.cwd })
+    if (options.input !== undefined) {
+      child.stdin?.write(options.input)
+      child.stdin?.end()
+    }
     let stdout = ''
     let stderr = ''
     let finished = false
@@ -130,7 +135,13 @@ function extractJson(text: string): unknown {
 export async function feishuStatus(): Promise<FeishuStatus> {
   const cli = findLarkCli()
   if (!cli) return { installed: false, configured: false }
-  const result = await runLarkCli(['auth', 'status'], { timeoutMs: 20_000 })
+  const [result, configResult] = await Promise.all([
+    runLarkCli(['auth', 'status'], { timeoutMs: 20_000 }),
+    runLarkCli(['config', 'show'], { timeoutMs: 15_000 }),
+  ])
+  const configData = extractJson(configResult.stdout + '\n' + configResult.stderr) as
+    | { appId?: string }
+    | null
   const data = extractJson(result.stdout + '\n' + result.stderr) as
     | { ok?: boolean; identity?: string; error?: { message?: string } }
     | null
@@ -139,6 +150,7 @@ export async function feishuStatus(): Promise<FeishuStatus> {
     configured: data?.ok === true,
     cliPath: cli,
     version: CLI_VERSION,
+    appId: configData?.appId,
     identity: data?.identity,
     error: data?.ok === true ? undefined : data?.error?.message ?? result.stderr.slice(0, 200),
   }
@@ -224,6 +236,54 @@ export async function loginFeishu(
   }
   const after = await feishuStatus()
   return after.configured ? { ok: true } : { ok: false, error: after.error ?? '登录未完成' }
+}
+
+
+export async function switchFeishuApp(
+  mode: 'new' | 'bind',
+  payload: { appId?: string; appSecret?: string },
+  onProgress: (progress: FeishuProgress) => void
+): Promise<{ ok: boolean; error?: string }> {
+  if (!findLarkCli()) return { ok: false, error: 'lark-cli 未安装' }
+  onProgress({ phase: 'config', message: '正在清除当前应用和登录状态…' })
+  await runLarkCli(['config', 'remove'], { timeoutMs: 30_000 })
+
+  let opened = false
+  const handleLine = (line: string): void => {
+    const match = /https?:\/\/[^\s'"<>]+/.exec(line)
+    if (match && !opened && /lark|feishu|open\.larksuite|accounts/.test(match[0])) {
+      opened = true
+      onProgress({ phase: 'config', message: '已打开应用配置页面，请在浏览器完成', url: match[0] })
+      void shell.openExternal(match[0])
+    } else if (line && !/^[█▀▄\s]+$/.test(line)) {
+      onProgress({ phase: 'config', message: line.slice(0, 160) })
+    }
+  }
+
+  if (mode === 'new') {
+    onProgress({ phase: 'config', message: '正在打开飞书应用创建页面…' })
+    const init = await runLarkCli(['config', 'init', '--new'], {
+      timeoutMs: 300_000,
+      onLine: handleLine,
+    })
+    if (init.code !== 0) {
+      return { ok: false, error: (init.stderr || init.stdout).slice(-400) || '创建应用失败' }
+    }
+  } else {
+    const appId = payload.appId?.trim()
+    const appSecret = payload.appSecret?.trim()
+    if (!appId || !appSecret) return { ok: false, error: '需要 App ID 和 App Secret' }
+    onProgress({ phase: 'config', message: '正在绑定已有应用…' })
+    const init = await runLarkCli(
+      ['config', 'init', '--app-id', appId, '--app-secret-stdin'],
+      { timeoutMs: 60_000, input: appSecret + '\n' }
+    )
+    if (init.code !== 0) {
+      return { ok: false, error: (init.stderr || init.stdout).slice(-400) || '绑定应用失败' }
+    }
+  }
+
+  return loginFeishu(onProgress)
 }
 
 export interface FeishuDocument {

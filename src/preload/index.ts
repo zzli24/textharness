@@ -267,6 +267,7 @@ const api = {
         installed: boolean
         configured: boolean
         cliPath?: string
+        appId?: string
         identity?: string
         error?: string
       }>,
@@ -280,6 +281,8 @@ const api = {
         revision?: number
         error?: string
       }>,
+    feishuSwitchApp: (mode: 'new' | 'bind', payload: { appId?: string; appSecret?: string }) =>
+      ipcRenderer.invoke('feishu:switchApp', mode, payload) as Promise<{ ok: boolean; error?: string }>,
     feishuSearch: (query: string) =>
       ipcRenderer.invoke('feishu:search', query) as Promise<{
         ok: boolean
