@@ -392,6 +392,37 @@ export const TOOL_DEFS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'feishu_fetch_doc',
+      description:
+        '从飞书云文档拉取内容（Markdown），保存到工作区「飞书/」目录。需要先在 设置 → 集成 里登录飞书。',
+      parameters: {
+        type: 'object',
+        properties: {
+          doc: { type: 'string', description: '飞书文档 URL 或 token' },
+        },
+        required: ['doc'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'feishu_push_doc',
+      description:
+        '把工作区里的 Markdown 整篇覆盖回写飞书文档。会丢失评论/图片等富内容，执行前会请求用户确认。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对工作区的 Markdown 文件路径' },
+          doc: { type: 'string', description: '飞书文档 URL 或 token；省略时用上次拉取的映射' },
+        },
+        required: ['path'],
+      },
+    },
+  },
 ]
 
 export type ToolDef = (typeof TOOL_DEFS)[number]

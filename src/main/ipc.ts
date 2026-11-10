@@ -10,6 +10,13 @@ import { registerServiceIpc } from './ipcServices'
 import { importNotes, type ImportSource } from './services/importer'
 import { createBackup, restoreBackup } from './services/backup'
 import { getOneNoteStatus, runOneNoteExport } from './services/onenote'
+import {
+  feishuStatus,
+  installLarkCli,
+  loginFeishu,
+  pullFeishuDoc,
+  pushFeishuDoc,
+} from './services/feishu'
 import { loadConfig, patchConfig } from './services/config'
 import { trace } from './services/logger'
 import { ensureMemoryDir, listMemoryFiles, readMemory, writeMemoryFile } from './services/memory'
@@ -829,6 +836,25 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
       error: result.errors[0],
     }
   })
+
+  ipcMain.handle('feishu:status', async () => feishuStatus())
+
+  ipcMain.handle('feishu:install', async (event) => {
+    const send = (progress: unknown): void => {
+      if (!event.sender.isDestroyed()) event.sender.send('feishu:progress', progress)
+    }
+    return installLarkCli(send as never)
+  })
+
+  ipcMain.handle('feishu:login', async (event) => {
+    const send = (progress: unknown): void => {
+      if (!event.sender.isDestroyed()) event.sender.send('feishu:progress', progress)
+    }
+    return loginFeishu(send as never)
+  })
+
+  ipcMain.handle('feishu:pull', async (_event, doc: string) => pullFeishuDoc(doc))
+  ipcMain.handle('feishu:push', async (_event, path: string, doc?: string) => pushFeishuDoc(path, doc))
 
   ipcMain.handle('app:copyImage', async (_event, dataUrl: string) => {
     const image = nativeImage.createFromDataURL(dataUrl)

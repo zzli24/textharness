@@ -793,6 +793,207 @@ html[data-md-theme='custom'][data-theme='dark'] {
 
 
     /* ---------------- 导入 / 备份 ---------------- */
+    /* ---------------- 集成 ---------------- */
+    const buildIntegrations = (pane: HTMLElement): void => {
+      title(pane, '集成')
+      desc(pane, '把外部文档服务接进来，让 agent 能直接读取和回写。凭据由各家 CLI 自己保管，不写进 config.json。')
+
+      const grid = document.createElement('div')
+      grid.className = 'import-grid'
+
+      const feishuCard = document.createElement('button')
+      feishuCard.type = 'button'
+      feishuCard.className = 'import-card'
+      const feishuIcon = document.createElement('span')
+      feishuIcon.className = 'import-icon'
+      feishuIcon.textContent = '🪶'
+      const feishuName = document.createElement('span')
+      feishuName.className = 'import-name'
+      feishuName.textContent = '飞书文档'
+      const feishuDesc = document.createElement('span')
+      feishuDesc.className = 'import-desc'
+      feishuDesc.textContent = '通过官方 lark-cli：拉取 Markdown、整篇回写'
+      feishuCard.append(feishuIcon, feishuName, feishuDesc)
+
+      const dingCard = document.createElement('button')
+      dingCard.type = 'button'
+      dingCard.className = 'import-card'
+      dingCard.disabled = true
+      const dingIcon = document.createElement('span')
+      dingIcon.className = 'import-icon'
+      dingIcon.textContent = '🔔'
+      const dingName = document.createElement('span')
+      dingName.className = 'import-name'
+      dingName.textContent = '钉钉文档'
+      const dingDesc = document.createElement('span')
+      dingDesc.className = 'import-desc'
+      dingDesc.textContent = '即将支持（dws CLI 文档能力验证中）'
+      dingCard.append(dingIcon, dingName, dingDesc)
+
+      grid.append(feishuCard, dingCard)
+      pane.appendChild(grid)
+
+      const statusLine = document.createElement('div')
+      statusLine.className = 'import-status'
+      pane.appendChild(statusLine)
+
+      const refreshStatus = (): void => {
+        void window.th.app.feishuStatus().then((status) => {
+          if (!status.installed) {
+            statusLine.textContent = 'lark-cli 未安装；点开飞书卡片后可以一键安装。'
+            return
+          }
+          statusLine.textContent = status.configured
+            ? '已连接飞书' + (status.identity ? '（' + status.identity + '）' : '') + '：可以直接拉取/回写文档。'
+            : 'lark-cli 已安装，但还没登录飞书。点开卡片完成登录。'
+        })
+      }
+      refreshStatus()
+
+      const openFeishuDialog = (): void => {
+        const parts = createModal('飞书集成', { tall: true })
+        let lastPulled: string | null = null
+
+        const state = document.createElement('div')
+        state.className = 'import-status'
+        state.textContent = '正在检查状态…'
+        parts.body.appendChild(state)
+
+        const row = document.createElement('div')
+        row.className = 'import-backup-row'
+        const installBtn = button('安装 / 升级 CLI')
+        const loginBtn = button('登录飞书', true)
+        const refreshBtn = button('刷新状态')
+        row.append(installBtn, loginBtn, refreshBtn)
+        parts.body.appendChild(row)
+
+        const progress = document.createElement('div')
+        progress.className = 'import-status'
+        parts.body.appendChild(progress)
+
+        const docInput = document.createElement('input')
+        docInput.className = 'import-select'
+        docInput.style.width = '100%'
+        docInput.style.marginTop = '12px'
+        docInput.placeholder = '粘贴飞书文档 URL 或 token，例如 https://xxx.feishu.cn/docx/...'
+        parts.body.appendChild(docInput)
+
+        const docRow = document.createElement('div')
+        docRow.className = 'import-backup-row'
+        docRow.style.marginTop = '8px'
+        const pullBtn = button('拉取到工作区')
+        const pushBtn = button('回写上次拉取的文档')
+        docRow.append(pullBtn, pushBtn)
+        parts.body.appendChild(docRow)
+
+        const result = document.createElement('div')
+        result.className = 'import-status'
+        parts.body.appendChild(result)
+
+        const tip = document.createElement('p')
+        tip.className = 'set-note set-note-flush'
+        tip.textContent =
+          '回写是整篇覆盖，会丢失评论、图片等富内容；执行前会再确认一次。建议优先同步飞书云盘里的原生 .md 文件。'
+        parts.body.appendChild(tip)
+
+        const off = window.th.app.onFeishuProgress((event) => {
+          progress.textContent = event.message
+          if (event.url) progress.textContent += '\n' + event.url
+        })
+
+        const refresh = (): void => {
+          void window.th.app.feishuStatus().then((s) => {
+            if (!s.installed) {
+              state.textContent = 'lark-cli 未安装'
+            } else if (s.configured) {
+              state.textContent = '已连接飞书' + (s.identity ? '（' + s.identity + '）' : '')
+            } else {
+              state.textContent = 'lark-cli 已安装，未登录：' + (s.error ?? '请点登录')
+            }
+          })
+        }
+        refresh()
+
+        installBtn.addEventListener('click', () => {
+          installBtn.disabled = true
+          progress.textContent = '正在安装 lark-cli…'
+          void window.th.app.feishuInstall().then((r) => {
+            progress.textContent = r.ok ? '安装完成' : '安装失败：' + (r.error ?? '')
+            installBtn.disabled = false
+            refresh()
+            refreshStatus()
+          })
+        })
+
+        loginBtn.addEventListener('click', () => {
+          loginBtn.disabled = true
+          progress.textContent = '正在初始化并打开授权页面…'
+          void window.th.app.feishuLogin().then((r) => {
+            progress.textContent = r.ok ? '登录完成' : '登录失败：' + (r.error ?? '')
+            loginBtn.disabled = false
+            refresh()
+            refreshStatus()
+          })
+        })
+
+        refreshBtn.addEventListener('click', refresh)
+
+        pullBtn.addEventListener('click', () => {
+          const doc = docInput.value.trim()
+          if (!doc) {
+            result.textContent = '先粘贴一个飞书文档 URL 或 token'
+            return
+          }
+          pullBtn.disabled = true
+          result.textContent = '正在拉取…'
+          void window.th.app.feishuPull(doc).then((r) => {
+            pullBtn.disabled = false
+            if (!r.ok) {
+              result.textContent = '拉取失败：' + (r.error ?? '')
+              return
+            }
+            lastPulled = r.path ?? null
+            result.textContent = '已拉取「' + (r.title ?? '') + '」到 ' + (r.path ?? '')
+            document.dispatchEvent(new CustomEvent('th:refresh-tree'))
+          })
+        })
+
+        pushBtn.addEventListener('click', () => {
+          if (!lastPulled) {
+            result.textContent = '先拉取一篇文档，再回写；或让 agent 指定文件路径。'
+            return
+          }
+          void confirmDialog({
+            title: '回写飞书文档',
+            message: '将整篇覆盖这篇飞书文档，评论、图片等富内容可能丢失。',
+            detail: lastPulled,
+            buttons: ['取消', '仍然回写'],
+            defaultId: 0,
+            cancelId: 0,
+          }).then((choice) => {
+            if (choice !== 1) return
+            pushBtn.disabled = true
+            result.textContent = '正在回写…'
+            void window.th.app.feishuPush(lastPulled as string).then((r) => {
+              pushBtn.disabled = false
+              result.textContent = r.ok
+                ? '已回写（revision ' + (r.revision ?? '?') + '）'
+                : '回写失败：' + (r.error ?? '')
+            })
+          })
+        })
+
+        const closeBtn = button('关闭')
+        closeBtn.addEventListener('click', () => {
+          off()
+          parts.close()
+        })
+        parts.foot.appendChild(closeBtn)
+      }
+
+      feishuCard.addEventListener('click', openFeishuDialog)
+    }
+
     const buildImport = (pane: HTMLElement): void => {
       title(pane, '导入')
       desc(pane, '把其他笔记软件的内容搬进来。导入的笔记会放进工作区的「导入/」目录，自动进入文件树和全文搜索。')
@@ -1831,6 +2032,7 @@ html[data-md-theme='custom'][data-theme='dark'] {
       { id: 'import', group: '通用', label: '导入', keywords: ['导入', '备份', '迁移', 'evernote', 'obsidian', 'onenote', 'word'], build: buildImport },
       { id: 'editor', group: '通用', label: '编辑器', keywords: ['编码', '主题', 'utf8', 'gbk', '换行'], build: buildEditor },
       { id: 'look', group: '通用', label: '外观', keywords: ['背景', '壁纸', '模糊', '不透明度'], build: buildLook },
+      { id: 'integrations', group: '集成', label: '飞书 / 钉钉', keywords: ['集成', '飞书', '钉钉', 'lark', 'cli', '文档'], build: buildIntegrations },
       { id: 'model', group: 'AI', label: '模型接入', keywords: ['api', 'key', 'baseurl', '推理', 'deepseek'], build: buildModel },
       { id: 'agents', group: 'AI', label: '项目约定', keywords: ['agents.md', '规则', '约定'], build: buildAgents },
       { id: 'memory', group: 'AI', label: '记忆', keywords: ['记忆', '偏好', '日志', 'remember'], build: buildMemory },

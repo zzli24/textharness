@@ -231,6 +231,25 @@ export interface ThApi {
     backupCreate(): Promise<{ ok: boolean; path?: string; files: number; bytes: number; error?: string }>
     /** 从 zip 备份恢复 */
     backupRestore(): Promise<{ ok: boolean; restored: number; skipped: number; error?: string }>
+    /** 飞书集成状态 */
+    feishuStatus(): Promise<{
+      installed: boolean
+      configured: boolean
+      cliPath?: string
+      identity?: string
+      error?: string
+    }>
+    feishuInstall(): Promise<{ ok: boolean; error?: string }>
+    feishuLogin(): Promise<{ ok: boolean; error?: string }>
+    feishuPull(doc: string): Promise<{
+      ok: boolean
+      path?: string
+      title?: string
+      revision?: number
+      error?: string
+    }>
+    feishuPush(path: string, doc?: string): Promise<{ ok: boolean; revision?: number; error?: string }>
+    onFeishuProgress(cb: (progress: { phase: string; message: string; url?: string }) => void): () => void
     /** OneNote 导出环境状态 */
     oneNoteStatus(): Promise<{
       platform: string

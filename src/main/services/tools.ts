@@ -9,6 +9,7 @@ import { assertInside, listTree, looksBinary } from './files'
 import { deleteSession, listSessions } from './sessions'
 import { readMemory, remember, searchMemory } from './memory'
 import { TOOL_DEFS } from './toolSchemas'
+import { pullFeishuDoc, pushFeishuDoc } from './feishu'
 
 export { TOOL_DEFS }
 
@@ -919,6 +920,30 @@ export async function runTool(name: string, rawArgs: unknown, ctx: ToolContext):
           ok: true,
           text: matches.length ? `命中 ${matches.length} 条：\n${matches.join('\n')}` : `没有匹配「${pattern}」的内容。`,
         }
+      }
+
+      case 'feishu_fetch_doc': {
+        const doc = String(args['doc'] ?? '').trim()
+        if (!doc) return { ok: false, text: '缺少 doc（飞书文档 URL 或 token）' }
+        const result = await pullFeishuDoc(doc)
+        if (!result.ok || !result.path) return { ok: false, text: `飞书拉取失败：${result.error ?? '未知错误'}` }
+        return {
+          ok: true,
+          text: `已拉取「${result.title ?? '飞书文档'}」（revision ${result.revision ?? '?'}）到 ${displayPath(ctx, result.path)}`,
+        }
+      }
+
+      case 'feishu_push_doc': {
+        const file = await resolveToolPath(ctx, args['path'] as string, 'write')
+        if (!ctx.confirm) return { ok: false, text: '当前没有确认通道，不能回写飞书文档。' }
+        const approved = await ctx.confirm(
+          '回写飞书文档',
+          '将整篇覆盖飞书文档，评论、图片等富内容可能丢失。确定继续？'
+        )
+        if (!approved) return { ok: false, text: '用户取消了回写。' }
+        const result = await pushFeishuDoc(file, (args['doc'] as string | undefined) ?? undefined)
+        if (!result.ok) return { ok: false, text: `飞书回写失败：${result.error ?? '未知错误'}` }
+        return { ok: true, text: `已回写 ${displayPath(ctx, file)}（revision ${result.revision ?? '?'}）` }
       }
 
       case 'open_in_editor': {

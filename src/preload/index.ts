@@ -262,6 +262,31 @@ const api = {
     backupRestore: () =>
       ipcRenderer.invoke('backup:restore') as Promise<{ ok: boolean; restored: number; skipped: number; error?: string }>,
     revealPath: (target: string) => ipcRenderer.invoke('app:revealPath', target) as Promise<void>,
+    feishuStatus: () =>
+      ipcRenderer.invoke('feishu:status') as Promise<{
+        installed: boolean
+        configured: boolean
+        cliPath?: string
+        identity?: string
+        error?: string
+      }>,
+    feishuInstall: () => ipcRenderer.invoke('feishu:install') as Promise<{ ok: boolean; error?: string }>,
+    feishuLogin: () => ipcRenderer.invoke('feishu:login') as Promise<{ ok: boolean; error?: string }>,
+    feishuPull: (doc: string) =>
+      ipcRenderer.invoke('feishu:pull', doc) as Promise<{
+        ok: boolean
+        path?: string
+        title?: string
+        revision?: number
+        error?: string
+      }>,
+    feishuPush: (path: string, doc?: string) =>
+      ipcRenderer.invoke('feishu:push', path, doc) as Promise<{ ok: boolean; revision?: number; error?: string }>,
+    onFeishuProgress: (cb: (progress: { phase: string; message: string; url?: string }) => void) => {
+      const handler = (_event: unknown, progress: { phase: string; message: string; url?: string }): void => cb(progress)
+      ipcRenderer.on('feishu:progress', handler)
+      return () => ipcRenderer.removeListener('feishu:progress', handler)
+    },
     oneNoteStatus: () =>
       ipcRenderer.invoke('onenote:status') as Promise<{
         platform: string
