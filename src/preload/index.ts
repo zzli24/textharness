@@ -281,10 +281,31 @@ const api = {
         path?: string
         title?: string
         revision?: number
+        backup?: string
         error?: string
       }>,
     feishuSwitchApp: (mode: 'new' | 'bind', payload: { appId?: string; appSecret?: string }) =>
       ipcRenderer.invoke('feishu:switchApp', mode, payload) as Promise<{ ok: boolean; error?: string }>,
+    feishuList: () => ipcRenderer.invoke('feishu:list') as Promise<Array<{
+        token: string
+        path: string
+        title: string
+        revision: number
+        url: string
+        pulledAt?: number
+        state: 'synced' | 'modified' | 'missing'
+      }>>,
+    feishuDocInfo: (path: string) => ipcRenderer.invoke('feishu:docInfo', path) as Promise<{
+        token: string
+        path: string
+        title: string
+        revision: number
+        url: string
+        pulledAt?: number
+        state: 'synced' | 'modified' | 'missing'
+      } | null>,
+    feishuRemote: (path: string) =>
+      ipcRenderer.invoke('feishu:remote', path) as Promise<{ ok: boolean; content?: string; revision?: number; error?: string }>,
     feishuSearch: (query: string) =>
       ipcRenderer.invoke('feishu:search', query) as Promise<{
         ok: boolean

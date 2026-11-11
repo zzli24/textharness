@@ -36,6 +36,9 @@ interface UiMessage {
   bodyEl: HTMLDivElement
   toolBox: HTMLDivElement
   thinkingEl: HTMLDetailsElement | null
+  /** 第一段思考到达的时间；正文开始或结束时据此显示「思考了 N 秒」 */
+  thinkStartedAt?: number
+  thinkSealed?: boolean
   done: boolean
 }
 
@@ -605,12 +608,27 @@ export function createChat(deps: ChatDeps): ChatApi {
     const details = document.createElement('details')
     details.className = 'thinking'
     const summary = document.createElement('summary')
-    summary.textContent = '思考过程'
+    summary.textContent = msg.done ? '思考过程' : '思考中…'
     const box = document.createElement('div')
     details.append(summary, box)
     msg.el.insertBefore(details, msg.bodyEl)
     msg.thinkingEl = details
+    if (!msg.done) {
+      msg.thinkStartedAt = Date.now()
+      // 思考过程中默认展开，能看到实时推理；正文开始后自动收起
+      details.open = true
+    }
     return details
+  }
+
+  /** 思考结束：标题显示耗时，并收起推理内容 */
+  function sealThinking(msg: UiMessage): void {
+    if (!msg.thinkingEl || msg.thinkSealed || !msg.thinkStartedAt) return
+    msg.thinkSealed = true
+    const seconds = Math.max(1, Math.round((Date.now() - msg.thinkStartedAt) / 1000))
+    const summary = msg.thinkingEl.querySelector('summary')
+    if (summary) summary.textContent = `思考了 ${seconds} 秒`
+    msg.thinkingEl.open = false
   }
 
   function createToolCard(payload: ToolEventPayload): HTMLElement {
@@ -937,6 +955,7 @@ export function createChat(deps: ChatDeps): ChatApi {
     // 兜底：任何残留的"生成中"光标都清掉
     for (const msg of messages) {
       if (msg.role !== 'assistant') continue
+      sealThinking(msg)
       msg.done = true
       msg.bodyEl.classList.remove('cursor-blink')
     }
@@ -962,6 +981,7 @@ export function createChat(deps: ChatDeps): ChatApi {
     if (!current || toolsSinceText) {
       // 上一段正文已经结束（后面跟了工具调用），收尾再新起一段
       if (current) {
+        sealThinking(current)
         current.done = true
         current.bodyEl.classList.remove('cursor-blink')
         paintBody(current)
@@ -970,6 +990,7 @@ export function createChat(deps: ChatDeps): ChatApi {
       messages.push(current)
       toolsSinceText = false
     }
+    sealThinking(current)
     current.content += text
     paintBody(current)
     hintEl.textContent = '生成中…'
@@ -977,6 +998,7 @@ export function createChat(deps: ChatDeps): ChatApi {
   })
 
   window.th.ai.onTool((payload) => {
+    if (current) sealThinking(current)
     if (payload.id !== currentId) return
     if (!current) {
       current = newAssistant()

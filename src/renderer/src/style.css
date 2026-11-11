@@ -1780,6 +1780,8 @@ html.has-bg .tab.active {
   font-size: 12px;
   color: var(--fg-dim);
   line-height: 1.7;
+  /* 详情里的换行（差异统计 / 风险提示分行）要保留 */
+  white-space: pre-line;
 }
 
 /* 文件夹搜索 / 快速打开 */
@@ -4306,15 +4308,7 @@ html[data-theme='light'] .cm-bracket-l4 { color: #2f7d3c; }
   border-color: var(--fg-dim);
 }
 
-/* 飞书文档用 InkDoc 同款系统字体栈（macOS 上是 PingFang SC） */
-body.th-feishu-doc {
-  --md-font: "PingFang SC", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-  --md-heading-font: "PingFang SC", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-}
-
-body.th-feishu-doc .cm-content {
-  font-family: var(--md-font);
-}
+/* 飞书文档的排版见 mdThemes.css 里的「飞书」主题（html.th-feishu-doc 自动套用） */
 
 
 /* 飞书来源里的搜索框 */
@@ -4381,4 +4375,404 @@ body.th-feishu-doc .cm-content {
   padding: 5px 6px;
   color: var(--fg-dim);
   font-size: 11px;
+}
+
+
+/* ============================================================
+ * 0.9 改版：文件栏 / 飞书搜索 / 文档头 / 状态栏分组
+ * ============================================================ */
+
+/* ---- 来源切换：分段控件 ---- */
+#sidebar .source-tabs {
+  margin: 8px 8px 0;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--bg-3);
+}
+
+#sidebar .source-tab {
+  height: 24px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+#sidebar .source-tab:hover {
+  background: transparent;
+  color: var(--fg);
+}
+
+#sidebar .source-tab.on {
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.source-count {
+  margin-left: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.source-count:empty {
+  display: none;
+}
+
+/* ---- 栏目标题 + 工具按钮 ---- */
+.side-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  margin-top: 4px;
+}
+
+.side-panel-title {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+}
+
+.side-panel-head .spacer {
+  flex: 1;
+}
+
+.side-panel-head .icon-btn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg-dim);
+}
+
+.side-panel-head .icon-btn:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.side-panel-head .icon-btn[hidden] {
+  display: none;
+}
+
+/* ---- 统一搜索框（紧贴文件列表） ---- */
+.side-search.side-search-box {
+  flex: none;
+  height: 28px;
+  margin: 0 8px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.side-search.side-search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+#sidebar #tree-filter {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  outline: none;
+  padding: 0;
+  font-size: 12px;
+}
+
+#sidebar #tree-filter:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.side-search-hint {
+  flex: none;
+  font-size: 10px;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 15px;
+}
+
+.side-search-hint:empty {
+  display: none;
+}
+
+/* ---- 飞书云端搜索结果 ---- */
+#sidebar .feishu-search-results {
+  flex: none;
+  margin: 0 0 4px;
+  max-height: 46%;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+#sidebar .feishu-search-results[hidden] {
+  display: none;
+}
+
+.feishu-group {
+  padding: 4px 12px 3px;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+#sidebar .feishu-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 12px);
+  margin: 0 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.feishu-result-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.feishu-result-action {
+  flex: none;
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 5px;
+  padding: 0 7px;
+  line-height: 18px;
+  background: var(--bg);
+}
+
+.feishu-result-action.done {
+  color: var(--fg-dim);
+  border-color: var(--border);
+  background: transparent;
+}
+
+#sidebar .feishu-search-status {
+  padding: 6px 12px;
+}
+
+/* ---- 飞书未连接 ---- */
+.feishu-connect {
+  margin: auto 16px;
+  padding: 24px 0 40px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--fg-dim);
+}
+
+.feishu-connect[hidden] {
+  display: none;
+}
+
+.feishu-connect-ico {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #3370ff;
+  color: #fff;
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.feishu-connect-text {
+  color: var(--fg);
+}
+
+.feishu-connect-btn {
+  margin: 14px auto 8px;
+  width: 132px;
+  height: 30px;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.feishu-connect-btn:hover {
+  filter: brightness(1.08);
+}
+
+.feishu-connect-note {
+  font-size: 11px;
+}
+
+#tree[hidden] {
+  display: none;
+}
+
+/* ---- 文件树上的同步状态点 ---- */
+.tree-badge {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+}
+
+.tree-badge-synced {
+  background: #34c724;
+  opacity: 0.75;
+}
+
+.tree-badge-modified {
+  background: #ff8800;
+}
+
+.tree-badge-missing {
+  background: #f54a45;
+}
+
+/* ---- 飞书文档头 ---- */
+.doc-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 12.5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.doc-head[hidden] {
+  display: none;
+}
+
+.doc-head .spacer {
+  flex: 1;
+}
+
+.doc-head-crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+}
+
+.doc-head-src {
+  color: var(--fg-dim);
+}
+
+.doc-head-crumb b {
+  font-weight: 600;
+}
+
+.doc-head-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 11px;
+  font-size: 11.5px;
+}
+
+.doc-head-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.doc-head-chip.synced {
+  color: #1f9d3a;
+  background: color-mix(in srgb, #34c724 14%, transparent);
+}
+
+.doc-head-chip.modified {
+  color: #c27000;
+  background: color-mix(in srgb, #ff8800 15%, transparent);
+}
+
+.doc-head-chip.conflict {
+  color: #d83931;
+  background: color-mix(in srgb, #f54a45 14%, transparent);
+}
+
+.doc-head-meta {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.doc-head-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.doc-head-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.doc-head-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.doc-head-btn.primary:hover {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+@media (max-width: 1100px) {
+  .doc-head-meta {
+    display: none;
+  }
+}
+
+/* ---- 状态栏：文档 | 文本 | 状态 三组 ---- */
+.st-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.st-group:not(:has(> :not(.hidden):not([style*='none']))) {
+  display: none;
+}
+
+.st-group:not(:has(> :not(.hidden):not([style*='none']))) + .st-sep {
+  display: none;
+}
+
+.st-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+#st-json.emph {
+  color: var(--accent);
 }

@@ -19,6 +19,9 @@ import {
   pushFeishuDoc,
   searchFeishuDocs,
   switchFeishuApp,
+  listFeishuDocs,
+  feishuDocInfo,
+  feishuRemoteContent,
 } from './services/feishu'
 import { loadConfig, patchConfig } from './services/config'
 import { trace } from './services/logger'
@@ -864,6 +867,10 @@ export function registerIpc(deps: IpcDeps & Partial<UpdateBridge>): void {
     }
     return switchFeishuApp(mode, payload ?? {}, send as never)
   })
+
+  ipcMain.handle('feishu:list', async () => listFeishuDocs())
+  ipcMain.handle('feishu:docInfo', async (_event, path: string) => feishuDocInfo(path))
+  ipcMain.handle('feishu:remote', async (_event, path: string) => feishuRemoteContent(path))
 
   ipcMain.handle('feishu:search', async (_event, query: string) => searchFeishuDocs(query))
 

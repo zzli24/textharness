@@ -19,7 +19,7 @@ import { createTree, type TreeApi } from './tree'
 import { askTable, askText, confirmDialog, createModal, openMcpAddDialog, openSettings } from './dialogs'
 import { openArchivePanel } from './archivePanel'
 import { openDraftsPanel } from './draftsPanel'
-import { openDiff } from './diffView'
+import { diffLines, openDiff } from './diffView'
 import { requestAccess, requestScriptApproval } from './approval'
 import { describeChange } from './recipes'
 import { closeToolsPanel, openToolsPanel } from './toolsPanel'
@@ -447,6 +447,7 @@ function applyFeishuFont(path: string | null): void {
     ? normalized.slice(normalizedRoot.length + 1)
     : ''
   document.body.classList.toggle('th-feishu-doc', rel.split('/')[0] === '飞书')
+  document.documentElement.classList.toggle('th-feishu-doc', rel.split('/')[0] === '飞书')
 }
 
 function openDoc(doc: Doc): void {
@@ -860,6 +861,15 @@ function pushDirty(): void {
   window.th.app.setDirty(docs.filter((d) => d.dirty).length)
 }
 
+/** 文档头等跟随状态栏一起刷新的轻量回调（boot 里赋值） */
+let onStatusTick: (() => void) | null = null
+
+function inFeishuDir(path: string | null): boolean {
+  const root = (cfg.workspaceRoot ?? '').replace(/[\\/]+$/, '').replace(/\\/g, '/')
+  const normalized = (path ?? '').replace(/\\/g, '/')
+  return normalized.startsWith(root + '/飞书/')
+}
+
 function updateStatus(): void {
   updateMdLiveClass()
   const doc = activeDoc()
@@ -882,7 +892,13 @@ function updateStatus(): void {
     const isGrid = doc.kind === 'grid'
     sourceBtn.style.display = isGrid ? '' : 'none'
     const jsonBtn = document.getElementById('st-json') as HTMLButtonElement | null
-    if (jsonBtn) jsonBtn.style.display = isGrid ? 'none' : ''
+    // JSON 格式化：.json 文件、未命名草稿、或有选中内容时才出现
+    const isJson = /\.(json|jsonc|json5|geojson)$/i.test(doc.path ?? '')
+    const hasSelection = !view.state.selection.main.empty
+    if (jsonBtn) {
+      jsonBtn.style.display = !isGrid && (isJson || hasSelection || !doc.path) ? '' : 'none'
+      jsonBtn.classList.toggle('emph', isJson)
+    }
     sourceBtn.title = isGrid && doc.srcView ? '切回表格视图' : '查看原始 CSV 源码'
   }
   $<HTMLSelectElement>('st-encoding').value = doc.meta.encoding
@@ -896,6 +912,7 @@ function updateStatus(): void {
   columnBtn.title = columnOn
     ? '列选择模式已开启：拖拽变成矩形选择（再点一次关闭）'
     : '列选择模式（点击开启，也可以按住 Alt 拖拽）'
+  onStatusTick?.()
 }
 
 /* ------------------------------------------------------------------ */
@@ -1121,6 +1138,7 @@ async function saveDoc(doc: Doc | null, saveAs = false): Promise<boolean> {
     doc.path = target
     doc.title = baseName(target)
     doc.dirty = false
+    document.dispatchEvent(new CustomEvent('th:doc-saved', { detail: target }))
     // 保存成功：改动标记的基线推进到刚写入的内容
     if (doc.id === activeId) {
       view.dispatch({ effects: setBaselineEffect.of(text) })
@@ -1756,7 +1774,7 @@ function closeOverlays(): void {
   document.querySelectorAll('.overlay').forEach((el) => el.remove())
 }
 
-function openSearchPanel(): void {
+function openSearchPanel(initialQuery = ''): void {
   closeOverlays()
   const parts = createModal('文件夹搜索', { tall: true })
   const q = labeledInput('查找内容', '支持正则；回车开始搜索')
@@ -1869,6 +1887,11 @@ function openSearchPanel(): void {
   })
 
   q.input.focus()
+  // 从侧栏搜索框回车进来：带上关键词直接搜
+  if (initialQuery) {
+    q.input.value = initialQuery
+    void doSearch()
+  }
 }
 
 function fuzzyMatch(haystack: string, needle: string): boolean {
@@ -2514,7 +2537,7 @@ function applyTheme(theme: 'dark' | 'light'): void {
   if (view && current) view.setState(current.state)
 }
 
-const MD_THEME_IDS = ['github', 'bear', 'typo', 'vue', 'solarized', 'dracula', 'custom'] as const
+const MD_THEME_IDS = ['github', 'feishu', 'bear', 'typo', 'vue', 'solarized', 'dracula', 'custom'] as const
 
 /**
  * 切换 Markdown 渲染主题。
@@ -2632,99 +2655,389 @@ async function boot(): Promise<void> {
   })
   void tree.refresh()
 
+  /* ---- 文件栏：来源切换 + 统一搜索框 + 飞书同步状态 ---- */
+  type FeishuInfo = Awaited<ReturnType<typeof window.th.app.feishuList>>[number]
   const sourceTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.source-tab'))
-  const feishuPanel = $('feishu-search-panel')
-  const feishuSearchInput = $<HTMLInputElement>('feishu-search-input')
-  const feishuSearchResults = $('feishu-search-results')
+  const sideInput = $<HTMLInputElement>('tree-filter')
+  const sideHint = $('side-search-hint')
+  const sideTitle = $('side-panel-title')
+  const feishuResults = $('feishu-search-results')
+  const feishuConnect = $('feishu-connect')
+  const feishuCount = $('feishu-count')
+  const feishuRefreshBtn = $<HTMLButtonElement>('btn-feishu-refresh')
+  const localOnlyBtns = ['btn-new-file', 'btn-quick-open', 'btn-search-files'].map((id) => $<HTMLButtonElement>(id))
+  let source: 'local' | 'feishu' = 'local'
+  let feishuDocs: FeishuInfo[] = []
+  let feishuConnected: boolean | null = null
   let searchSeq = 0
   let searchTimer: number | undefined
-  const applySource = (source: string): void => {
+  const samePath = (a: string, b: string): boolean => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+
+  const refreshFeishuDocs = async (): Promise<void> => {
+    try {
+      feishuDocs = await window.th.app.feishuList()
+    } catch {
+      feishuDocs = []
+    }
+    feishuCount.textContent = feishuDocs.length ? String(feishuDocs.length) : ''
+    tree.setBadges(new Map(feishuDocs.map((item) => [item.path, item.state])))
+    void paintDocHead()
+  }
+
+  const paintSource = (): void => {
+    const feishu = source === 'feishu'
     for (const tab of sourceTabs) tab.classList.toggle('on', tab.dataset['source'] === source)
-    feishuPanel.hidden = source !== 'feishu'
-    if (source === 'feishu') {
-      tree.setScope('飞书', { emptyText: '（还没有拉取飞书文档，点上面的按钮搜索）' })
-    } else {
-      tree.setScope('', { exclude: ['飞书', '钉钉'] })
+    sideTitle.textContent = feishu ? '飞书文档' : '工作区'
+    for (const btn of localOnlyBtns) btn.hidden = feishu
+    feishuRefreshBtn.hidden = !feishu
+    const blocked = feishu && feishuConnected === false
+    feishuConnect.hidden = !blocked
+    sideInput.disabled = blocked
+    sideInput.placeholder = feishu
+      ? blocked
+        ? '连接后可搜索飞书文档'
+        : '搜索飞书文档（标题 + 正文）'
+      : '过滤文件名，回车全文搜索'
+    sideHint.textContent = feishu ? '' : 'Ctrl P'
+    $('tree').hidden = blocked
+    if (!feishu || blocked) {
+      feishuResults.hidden = true
+      feishuResults.textContent = ''
     }
   }
-  for (const tab of sourceTabs) {
-    tab.addEventListener('click', () => applySource(tab.dataset['source'] ?? 'local'))
+
+  const checkFeishuConnected = async (): Promise<void> => {
+    try {
+      const status = await window.th.app.feishuStatus()
+      feishuConnected = status.installed && status.configured
+    } catch {
+      feishuConnected = false
+    }
+    if (source === 'feishu') paintSource()
   }
+
+  const statusLine = (text: string): HTMLElement => {
+    const el = document.createElement('div')
+    el.className = 'feishu-search-status'
+    el.textContent = text
+    return el
+  }
+
+  const tokenOf = (ref: string): string => /\/(?:docx|docs|wiki|sheets|base)\/([A-Za-z0-9]+)/.exec(ref)?.[1] ?? ref
+
+  const pullAndOpen = async (ref: string, row: HTMLButtonElement, action: HTMLElement): Promise<void> => {
+    const token = tokenOf(ref)
+    const existing = feishuDocs.find((item) => item.token === token)
+    const openDocForIt = existing ? docs.find((d) => d.path && samePath(d.path, existing.path)) : undefined
+    // 同一篇已经拉过、而且本地改了还没回写：先问清楚再覆盖
+    if (existing && (existing.state === 'modified' || openDocForIt?.dirty)) {
+      const choice = await confirmDialog({
+        title: '本地有未回写的修改',
+        message: '「' + existing.title + '」在本地改过，还没回写飞书。',
+        detail: '重新拉取会用云端内容覆盖本地文件；本地修改会另存一份备份（文件名带「本地修改」）。',
+        buttons: ['取消', '直接打开本地', '拉取并备份本地'],
+        defaultId: 1,
+        cancelId: 0,
+        primaryId: 2,
+      })
+      if (choice === 0) return
+      if (choice === 1) {
+        window.dispatchEvent(new CustomEvent('th:open-path', { detail: existing.path }))
+        return
+      }
+      if (openDocForIt?.dirty) {
+        const saved = await saveDoc(openDocForIt)
+        if (!saved) return
+      }
+    }
+    row.disabled = true
+    action.textContent = '拉取中…'
+    const result = await window.th.app.feishuPull(ref)
+    row.disabled = false
+    if (!result.ok) {
+      action.textContent = '重试'
+      toast('拉取失败：' + (result.error ?? '未知错误'))
+      return
+    }
+    action.textContent = '已拉取'
+    action.classList.add('done')
+    if (result.backup) toast('本地修改已备份为 ' + baseName(result.backup))
+    await tree.refresh()
+    await refreshFeishuDocs()
+    if (result.path) {
+      window.dispatchEvent(new CustomEvent('th:reload-path', { detail: result.path }))
+      window.dispatchEvent(new CustomEvent('th:open-path', { detail: result.path }))
+    }
+  }
+
   const renderSearchResults = (items: Array<{ title: string; ref: string; type: string }>): void => {
-    feishuSearchResults.textContent = ''
+    feishuResults.textContent = ''
+    const head = document.createElement('div')
+    head.className = 'feishu-group'
+    head.textContent = '飞书云端 · ' + items.length
+    feishuResults.appendChild(head)
     if (!items.length) {
-      const empty = document.createElement('div')
-      empty.className = 'feishu-search-status'
-      empty.textContent = '没有搜到相关文档'
-      feishuSearchResults.appendChild(empty)
+      feishuResults.appendChild(statusLine('没有搜到相关文档'))
       return
     }
     for (const item of items.slice(0, 20)) {
+      const pulled = feishuDocs.find((doc) => doc.token === tokenOf(item.ref))
       const row = document.createElement('button')
       row.type = 'button'
       row.className = 'feishu-result'
+      const text = document.createElement('span')
+      text.className = 'feishu-result-text'
       const title = document.createElement('span')
       title.className = 'feishu-result-title'
       title.textContent = item.title
       const meta = document.createElement('span')
       meta.className = 'feishu-result-meta'
-      meta.textContent = item.type || '飞书文档'
-      row.append(title, meta)
+      meta.textContent = item.type === 'SHEET' ? '表格' : item.type === 'BITABLE' ? '多维表格' : '文档'
+      text.append(title, meta)
+      const action = document.createElement('span')
+      action.className = pulled ? 'feishu-result-action done' : 'feishu-result-action'
+      action.textContent = pulled ? '已拉取' : '拉取'
+      row.append(text, action)
+      row.title = pulled ? '点击打开本地副本；需要更新请在文档头点「查看差异」' : '拉取到 工作区/飞书 并打开'
       row.addEventListener('click', () => {
-        row.disabled = true
-        meta.textContent = '正在拉取…'
-        void window.th.app.feishuPull(item.ref).then((result) => {
-          if (!result.ok) {
-            meta.textContent = '拉取失败：' + (result.error ?? '未知错误')
-            row.disabled = false
-            return
-          }
-          feishuSearchResults.textContent = ''
-          feishuSearchInput.value = ''
-          document.dispatchEvent(new CustomEvent('th:refresh-tree'))
-          if (result.path) {
-            window.dispatchEvent(new CustomEvent('th:open-path', { detail: result.path }))
-          }
-        })
+        if (pulled && pulled.state !== 'missing' && !action.textContent?.startsWith('重试')) {
+          window.dispatchEvent(new CustomEvent('th:open-path', { detail: pulled.path }))
+          return
+        }
+        void pullAndOpen(item.ref, row, action)
       })
-      feishuSearchResults.appendChild(row)
+      feishuResults.appendChild(row)
     }
   }
 
   const runFeishuSearch = (): void => {
-    const query = feishuSearchInput.value.trim().slice(0, 30)
+    const query = sideInput.value.trim().slice(0, 30)
     if (!query) {
-      feishuSearchResults.textContent = ''
+      feishuResults.hidden = true
+      feishuResults.textContent = ''
       return
     }
     const seq = ++searchSeq
-    const status = document.createElement('div')
-    status.className = 'feishu-search-status'
-    status.textContent = '搜索中…'
-    feishuSearchResults.textContent = ''
-    feishuSearchResults.appendChild(status)
+    feishuResults.hidden = false
+    feishuResults.textContent = ''
+    feishuResults.appendChild(statusLine('正在搜索飞书云文档…'))
     void window.th.app.feishuSearch(query).then((result) => {
-      if (seq !== searchSeq) return
+      if (seq !== searchSeq || source !== 'feishu') return
       if (!result.ok) {
-        status.textContent = '搜索失败：' + (result.error ?? '请先登录飞书')
+        feishuResults.textContent = ''
+        feishuResults.appendChild(statusLine('搜索失败：' + (result.error ?? '请先连接飞书')))
         return
       }
       renderSearchResults(result.items)
     })
   }
 
-  feishuSearchInput.addEventListener('input', () => {
+  const applySource = (next: string): void => {
+    source = next === 'feishu' ? 'feishu' : 'local'
+    if (source === 'feishu') {
+      tree.setScope('飞书', { emptyText: '（还没有拉取飞书文档，在上面搜索）' })
+      void refreshFeishuDocs()
+      void checkFeishuConnected()
+    } else {
+      tree.setScope('', { exclude: ['飞书', '钉钉'] })
+    }
+    paintSource()
+    if (source === 'feishu' && sideInput.value.trim()) runFeishuSearch()
+  }
+  for (const tab of sourceTabs) {
+    tab.addEventListener('click', () => applySource(tab.dataset['source'] ?? 'local'))
+  }
+
+  sideInput.addEventListener('input', () => {
+    if (source !== 'feishu') return
     if (searchTimer) window.clearTimeout(searchTimer)
     searchTimer = window.setTimeout(runFeishuSearch, 300)
   })
-  feishuSearchInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault()
+  sideInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      sideInput.value = ''
+      tree.setFilter('')
+      feishuResults.hidden = true
+      feishuResults.textContent = ''
+      return
+    }
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    if (source === 'feishu') {
       if (searchTimer) window.clearTimeout(searchTimer)
       runFeishuSearch()
+      return
     }
+    const query = sideInput.value.trim()
+    if (query) openSearchPanel(query)
   })
+
+  $('btn-feishu-connect').addEventListener('click', () => {
+    localStorage.setItem('th.settings.section', 'integrations')
+    void openSettingsFlow()
+  })
+  feishuRefreshBtn.addEventListener('click', () => {
+    void checkFeishuConnected()
+    void tree.refresh().then(() => refreshFeishuDocs())
+    toast('已刷新飞书同步状态')
+  })
+  // 切回窗口 / 关掉设置后，连接状态和同步点可能变了
+  window.addEventListener('focus', () => {
+    if (source === 'feishu') void checkFeishuConnected()
+    void refreshFeishuDocs()
+  })
+
+  /* ---- 飞书文档头：来源 + 同步状态 + 主操作 ---- */
+  const docHead = $('doc-head')
+  const headCrumb = $('doc-head-crumb')
+  const headState = $('doc-head-state')
+  const headMeta = $('doc-head-meta')
+  let headInfo: FeishuInfo | null = null
+
+  const ago = (ms?: number): string => {
+    if (!ms) return ''
+    const minutes = Math.round((Date.now() - ms) / 60000)
+    if (minutes < 1) return '刚刚拉取'
+    if (minutes < 60) return minutes + ' 分钟前拉取'
+    const hours = Math.round(minutes / 60)
+    if (hours < 24) return hours + ' 小时前拉取'
+    return Math.round(hours / 24) + ' 天前拉取'
+  }
+
+  const paintHeadState = (): void => {
+    if (!headInfo) return
+    const doc = activeDoc()
+    let cls = 'synced'
+    let text = '已同步'
+    if (doc?.dirty) {
+      cls = 'modified'
+      text = '未保存'
+    } else if (headInfo.state === 'modified') {
+      cls = 'modified'
+      text = '本地已修改 · 未回写'
+    } else if (headInfo.state === 'missing') {
+      cls = 'conflict'
+      text = '文件不存在'
+    }
+    headState.className = 'doc-head-chip ' + cls
+    headState.textContent = text
+  }
+
+  async function paintDocHead(): Promise<void> {
+    const doc = activeDoc()
+    const path = doc && doc.kind === 'text' ? doc.path : null
+    if (!path) {
+      docHead.hidden = true
+      headInfo = null
+      return
+    }
+    const info =
+      feishuDocs.find((item) => samePath(item.path, path)) ??
+      (inFeishuDir(path) ? await window.th.app.feishuDocInfo(path).catch(() => null) : null)
+    if (activeDoc()?.path !== path) return
+    headInfo = info
+    if (!info) {
+      docHead.hidden = true
+      return
+    }
+    docHead.hidden = false
+    headCrumb.innerHTML = ''
+    const src = document.createElement('span')
+    src.className = 'doc-head-src'
+    src.textContent = '飞书 /'
+    const name = document.createElement('b')
+    name.textContent = info.title
+    headCrumb.append(src, ' ', name)
+    headMeta.textContent = ['rev ' + info.revision, ago(info.pulledAt)].filter(Boolean).join(' · ')
+    paintHeadState()
+  }
+
+  onStatusTick = paintHeadState
+  document.addEventListener('th:doc-changed', () => void paintDocHead())
+  document.addEventListener('th:doc-saved', () => void refreshFeishuDocs())
+
+  const remoteFor = async (path: string): Promise<{ ok: boolean; content?: string; revision?: number; error?: string }> => {
+    toast('正在获取飞书云端内容…')
+    return window.th.app.feishuRemote(path)
+  }
+
+  $('doc-head-open').addEventListener('click', () => {
+    if (headInfo) void window.th.app.openUrl(headInfo.url)
+  })
+
+  $('doc-head-diff').addEventListener('click', () => {
+    const doc = activeDoc()
+    if (!doc?.path || !headInfo) return
+    const local = doc.id === activeId ? view.state.doc.toString() : doc.state.doc.toString()
+    void remoteFor(doc.path).then((remote) => {
+      if (!remote.ok) {
+        toast('获取云端内容失败：' + (remote.error ?? ''))
+        return
+      }
+      openDiff({
+        leftText: remote.content ?? '',
+        leftName: '飞书云端 · rev ' + (remote.revision ?? ''),
+        rightText: local,
+        rightName: '本地',
+      })
+    })
+  })
+
+  $('doc-head-push').addEventListener('click', () => {
+    void (async () => {
+      const doc = activeDoc()
+      if (!doc?.path || !headInfo) return
+      if (doc.dirty) {
+        const saved = await saveDoc(doc)
+        if (!saved) return
+      }
+      const path = doc.path
+      const local = view.state.doc.toString()
+      const remote = await remoteFor(path)
+      let summary = ''
+      if (remote.ok) {
+        const rows = diffLines((remote.content ?? '').split('\n'), local.split('\n'))
+        const add = rows.filter((row) => row.kind === 'add').length
+        const del = rows.filter((row) => row.kind === 'del').length
+        const mod = rows.filter((row) => row.kind === 'mod').length
+        if (add + del + mod === 0) {
+          toast('本地内容和飞书云端一致，不需要回写')
+          return
+        }
+        summary = '和云端相比：新增 ' + add + ' 行 · 删除 ' + del + ' 行 · 修改 ' + mod + ' 行'
+        if (headInfo.revision > 0 && remote.revision && remote.revision !== headInfo.revision) {
+          summary += '\n⚠ 拉取后飞书上又有人改过（rev ' + headInfo.revision + ' → ' + remote.revision + '），回写会覆盖这些修改。'
+        }
+      } else {
+        summary = '无法获取云端内容（' + (remote.error ?? '未知错误') + '），没法预览差异。'
+      }
+      const choice = await confirmDialog({
+        title: '回写到飞书',
+        message: '用本地内容整篇覆盖飞书文档「' + headInfo.title + '」？',
+        detail: summary + '\n\n整篇覆盖会丢掉评论锚点、附件、图片排版等富内容；内嵌表格会变成普通表格。',
+        buttons: ['取消', '查看差异', '回写'],
+        defaultId: 1,
+        cancelId: 0,
+        primaryId: 2,
+      })
+      if (choice === 1 && remote.ok) {
+        openDiff({ leftText: remote.content ?? '', leftName: '飞书云端 · rev ' + (remote.revision ?? ''), rightText: local, rightName: '本地' })
+        return
+      }
+      if (choice !== 2) return
+      toast('正在回写飞书…')
+      const pushed = await window.th.app.feishuPush(path)
+      if (!pushed.ok) {
+        toast('回写失败：' + (pushed.error ?? '未知错误'))
+        return
+      }
+      toast('已回写飞书' + (pushed.revision ? '（rev ' + pushed.revision + '）' : ''))
+      await refreshFeishuDocs()
+    })()
+  })
+
   applySource('local')
+  void refreshFeishuDocs()
 
   const restored = await restoreEditorState()
   if (!restored) {

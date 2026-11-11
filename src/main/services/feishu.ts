@@ -2,6 +2,7 @@ import { app, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync, promises as fs } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { loadConfig } from './config'
 
 /**
@@ -63,8 +64,49 @@ function quoteArg(value: string): string {
   return '"' + value.replace(/"/g, '\\"') + '"'
 }
 
-/** 跑一条 lark-cli 命令；Windows 的 .cmd 需要经过 cmd.exe */
+/**
+ * 跑一条 lark-cli 命令。
+ * lark-cli 读写本地凭据时会加文件锁，几条命令同时跑（比如切到飞书时查状态 + 搜索 + 刷新）
+ * 会报 "failed to acquire key storage lock"。所以：
+ *  - 非交互命令排队一条一条跑
+ *  - 碰到锁冲突自动重试两次
+ * 交互命令（登录 / 安装，带 onLine 回调）不进队列，避免把搜索堵住。
+ */
+let cliQueue: Promise<unknown> = Promise.resolve()
+
 export function runLarkCli(
+  args: string[],
+  options: { timeoutMs?: number; onLine?: (line: string) => void; cwd?: string; input?: string } = {}
+): Promise<CliResult> {
+  const attempt = async (): Promise<CliResult> => {
+    let result = await runLarkCliOnce(args, options)
+    for (let retry = 1; retry <= 2 && /acquire key storage lock|storage lock/i.test(result.stdout + result.stderr); retry += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400 * retry))
+      result = await runLarkCliOnce(args, options)
+    }
+    return result
+  }
+  if (options.onLine) return attempt()
+  const run = cliQueue.then(attempt, attempt)
+  cliQueue = run.catch(() => undefined)
+  return run
+}
+
+/** 从 lark-cli 的 JSON 输出里取出人能看懂的错误 */
+export function cliErrorText(result: CliResult, fallback: string): string {
+  const data = extractJson(result.stdout + '\n' + result.stderr) as
+    | { error?: { message?: string; hint?: string } }
+    | null
+  const message = data?.error?.message
+  if (message) {
+    if (/acquire key storage lock/i.test(message)) return '飞书凭据被占用，请稍后再试'
+    return data?.error?.hint ? message + '（' + data.error.hint + '）' : message
+  }
+  const text = (result.stderr || result.stdout).trim()
+  return text ? text.slice(-200) : fallback
+}
+
+function runLarkCliOnce(
   args: string[],
   options: { timeoutMs?: number; onLine?: (line: string) => void; cwd?: string; input?: string } = {}
 ): Promise<CliResult> {
@@ -324,6 +366,9 @@ function safeFileName(name: string): string {
 }
 
 function titleFromMarkdown(markdown: string, fallback: string): string {
+  // 飞书返回的 <title> 才是真正的文档标题
+  const tagged = /<title>([\s\S]*?)<\/title>/.exec(markdown)?.[1]?.trim()
+  if (tagged) return tagged
   const first = markdown.split('\n').find((line) => line.trim().startsWith('#'))
   return first ? first.replace(/^#+\s*/, '').trim() : fallback
 }
@@ -361,7 +406,7 @@ export async function searchFeishuDocs(
   const data = extractJson(result.stdout + '\n' + result.stderr)
   const results = findResultArray(data)
   if (result.code !== 0 && !results.length) {
-    return { ok: false, items: [], error: result.stderr.slice(-300) || '搜索失败' }
+    return { ok: false, items: [], error: cliErrorText(result, '搜索失败') }
   }
   const items: FeishuSearchItem[] = []
   for (const item of results) {
@@ -515,6 +560,65 @@ async function expandEmbeddedSheets(markdown: string): Promise<string> {
   return expanded
 }
 
+
+/**
+ * 飞书 Markdown 里残留的 XML 块转成本地好读的 Markdown：
+ *  - <title>标题</title>             → 删除（正文第一行已经有 H1，没有时补一个）
+ *  - <callout emoji="💡">…</callout> → > [!NOTE] 💡 引用块（即时渲染里显示为高亮框）
+ *  - <blockquote><p>…</p></blockquote> → > …
+ *  - <cite title="x" doc-id="y">     → [x](https://feishu.cn/docx/y)
+ *  - <figure><source name="a.yml">   → 📎 a.yml（附件，保留文件名）
+ * 代码块里的内容不动。
+ */
+export function normalizeFeishuMarkdown(markdown: string): string {
+  const parts = markdown.split(/(^\s*```[\s\S]*?^\s*```[^\n]*$)/m)
+  const convert = (text: string): string => {
+    let out = text
+
+    const title = /<title>([\s\S]*?)<\/title>\s*/.exec(out)
+    if (title) {
+      out = out.replace(title[0], '')
+      // 飞书文档标题不在正文里；正文第一个 H1 往往是「一、xxx」这种章节标题，不能当文档标题
+      const name = title[1].trim()
+      const firstH1 = /^\s*#\s+(.+)$/m.exec(out)?.[1]?.trim()
+      if (name && firstH1 !== name) out = '# ' + name + '\n\n' + out
+    }
+
+    out = out.replace(/<callout\b([^>]*)>([\s\S]*?)<\/callout>/g, (_m, attrs: string, body: string) => {
+      const emoji = /emoji="([^"]*)"/.exec(attrs)?.[1] ?? '💡'
+      const inner = body
+        .replace(/<\/?p>/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+      const lines = inner.split('\n').map((line) => (line.trim() ? '> ' + line : '>'))
+      return '\n> [!NOTE] ' + emoji + '\n' + lines.join('\n') + '\n'
+    })
+
+    out = out.replace(/<blockquote>([\s\S]*?)<\/blockquote>/g, (_m, body: string) => {
+      const inner = body.replace(/<\/?p>/g, '\n').replace(/\n{2,}/g, '\n').trim()
+      return inner
+        .split('\n')
+        .map((line) => '> ' + line.trim())
+        .join('\n')
+    })
+
+    out = out.replace(/<cite\b([^>]*)>(?:<\/cite>)?/g, (_m, attrs: string) => {
+      const name = /title="([^"]*)"/.exec(attrs)?.[1] ?? '飞书文档'
+      const id = /doc-id="([^"]*)"/.exec(attrs)?.[1]
+      const type = /file-type="([^"]*)"/.exec(attrs)?.[1] ?? 'docx'
+      return id ? '[' + name + '](https://feishu.cn/' + type + '/' + id + ')' : name
+    })
+
+    out = out.replace(/<figure\b[^>]*>([\s\S]*?)<\/figure>/g, (_m, body: string) => {
+      const names = Array.from(body.matchAll(/<source\b[^>]*name="([^"]*)"/g)).map((m) => m[1])
+      return names.length ? names.map((name) => '📎 附件：' + name).join('\n') : ''
+    })
+
+    return out.replace(/\n{4,}/g, '\n\n\n')
+  }
+  return parts.map((part, index) => (index % 2 === 1 ? part : convert(part))).join('')
+}
+
 export async function fetchFeishuDoc(doc: string): Promise<FeishuDocument> {
   const result = await runLarkCli(
     ['docs', '+fetch', '--doc', doc, '--doc-format', 'markdown', '--as', 'user'],
@@ -528,7 +632,7 @@ export async function fetchFeishuDoc(doc: string): Promise<FeishuDocument> {
       }
     | null
   if (result.code !== 0 || !data?.ok || !data.data?.document?.content) {
-    throw new Error(data?.error?.message ?? result.stderr.slice(-300) ?? '拉取失败')
+    throw new Error(cliErrorText(result, '拉取失败'))
   }
   const document = data.data.document
   const content = document.content ?? ''
@@ -540,8 +644,31 @@ export async function fetchFeishuDoc(doc: string): Promise<FeishuDocument> {
   }
 }
 
+interface FeishuMapEntry {
+  path: string
+  revision: number
+  title: string
+  /** 拉取 / 回写时本地内容的 sha1：和当前文件比较，判断本地是否改过 */
+  hash?: string
+  url?: string
+  pulledAt?: number
+}
+
 interface FeishuMap {
-  docs: Record<string, { path: string; revision: number; title: string }>
+  docs: Record<string, FeishuMapEntry>
+}
+
+function hashText(text: string): string {
+  return createHash('sha1').update(text.replace(/\r\n/g, '\n')).digest('hex')
+}
+
+function normPath(path: string): string {
+  return path.replace(/\\/g, '/').toLowerCase()
+}
+
+function docUrlOf(token: string, ref: string): string {
+  if (/^https?:\/\//.test(ref)) return ref.split('#')[0]
+  return 'https://feishu.cn/docx/' + token
 }
 
 async function readMap(workspaceRoot: string): Promise<FeishuMap> {
@@ -562,26 +689,86 @@ async function writeMap(workspaceRoot: string, map: FeishuMap): Promise<void> {
 /** 拉取到工作区 飞书/ 目录，并记录 token → path 的映射 */
 export async function pullFeishuDoc(
   doc: string
-): Promise<{ ok: boolean; path?: string; title?: string; revision?: number; error?: string }> {
+): Promise<{ ok: boolean; path?: string; title?: string; revision?: number; backup?: string; error?: string }> {
   const config = loadConfig()
   try {
     const fetched = await fetchFeishuDoc(doc)
-    const content = await expandEmbeddedSheets(fetched.content)
+    const content = normalizeFeishuMarkdown(await expandEmbeddedSheets(fetched.content))
     const dir = join(config.workspaceRoot, '飞书')
     await fs.mkdir(dir, { recursive: true })
-    const file = join(dir, safeFileName(fetched.title) + '.md')
-    await fs.writeFile(file, content, 'utf8')
     const map = await readMap(config.workspaceRoot)
+    const existing = map.docs[fetched.token]
+
+    // 同一篇文档：沿用原来的文件（即使改过名）；不同文档但标题相同：另起文件名，不覆盖别人的
+    let file = existing?.path ?? join(dir, safeFileName(fetched.title) + '.md')
+    if (!existing) {
+      const taken = new Set(Object.values(map.docs).map((entry) => normPath(entry.path)))
+      let n = 2
+      const base = safeFileName(fetched.title)
+      while (taken.has(normPath(file))) {
+        file = join(dir, base + ' (' + n + ').md')
+        n += 1
+      }
+    }
+
+    // 本地改过还没回写：先留一份备份，避免拉取直接覆盖掉修改
+    let backup: string | undefined
+    if (existing?.hash) {
+      const current = await fs.readFile(file, 'utf8').catch(() => null)
+      if (current !== null && hashText(current) !== existing.hash) {
+        backup = file.replace(/\.md$/i, '') + '.本地修改-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '') + '.md'
+        await fs.writeFile(backup, current, 'utf8')
+      }
+    }
+
+    await fs.writeFile(file, content, 'utf8')
     map.docs[fetched.token] = {
       path: file,
       revision: fetched.revision,
       title: fetched.title,
+      hash: hashText(content),
+      url: docUrlOf(fetched.token, doc),
+      pulledAt: Date.now(),
     }
     await writeMap(config.workspaceRoot, map)
-    return { ok: true, path: file, title: fetched.title, revision: fetched.revision }
+    return { ok: true, path: file, title: fetched.title, revision: fetched.revision, backup }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+/**
+ * 回写前把本地写法还原成飞书能识别的块：
+ *  > [!NOTE] 💡   →   <callout emoji="💡">…</callout>
+ * 其他内容原样上传。代码块里的内容不动。
+ */
+export function toFeishuMarkdown(markdown: string): string {
+  const icons: Record<string, string> = { note: '💡', tip: '✅', important: '📌', warning: '⚠️', caution: '⛔' }
+  const parts = markdown.split(/(^\s*```[\s\S]*?^\s*```[^\n]*$)/m)
+  const convert = (text: string): string => {
+    const lines = text.split('\n')
+    const out: string[] = []
+    for (let i = 0; i < lines.length; i += 1) {
+      const head = /^\s*>\s?\[!(note|tip|important|warning|caution)\]\s*(.*)$/i.exec(lines[i])
+      if (!head) {
+        out.push(lines[i])
+        continue
+      }
+      const rest = head[2].trim()
+      const emojiMatch = /^(\p{Extended_Pictographic}\uFE0F?)\s*(.*)$/u.exec(rest)
+      const emoji = emojiMatch?.[1] ?? icons[head[1].toLowerCase()] ?? '💡'
+      const body: string[] = []
+      const first = emojiMatch ? emojiMatch[2] : rest
+      if (first) body.push(first)
+      while (i + 1 < lines.length && /^\s*>/.test(lines[i + 1])) {
+        i += 1
+        body.push(lines[i].replace(/^\s*>\s?/, ''))
+      }
+      out.push('<callout emoji="' + emoji + '">', ...body, '</callout>')
+    }
+    return out.join('\n')
+  }
+  return parts.map((part, index) => (index % 2 === 1 ? part : convert(part))).join('')
 }
 
 /** 整篇覆盖回写；调用前必须让用户确认（会丢失评论/图片等） */
@@ -604,7 +791,7 @@ export async function pushFeishuDoc(
     const tempDir = await fs.mkdtemp(join(app.getPath('temp'), 'th-feishu-'))
     let result
     try {
-      await fs.writeFile(join(tempDir, '_content.md'), content, 'utf8')
+      await fs.writeFile(join(tempDir, '_content.md'), toFeishuMarkdown(content), 'utf8')
       result = await runLarkCli(
         [
           'docs',
@@ -629,17 +816,78 @@ export async function pushFeishuDoc(
       | { ok?: boolean; data?: { document?: { revision_id?: number } }; error?: { message?: string } }
       | null
     if (result.code !== 0 || !data?.ok) {
-      return { ok: false, error: data?.error?.message ?? result.stderr.slice(-300) ?? '回写失败' }
+      return { ok: false, error: cliErrorText(result, '回写失败') }
     }
     const revision = data.data?.document?.revision_id
-    if (revision) {
-      const entry = map.docs[token]
-      if (entry) {
-        entry.revision = revision
-        await writeMap(config.workspaceRoot, map)
-      }
+    const entry = map.docs[token]
+    if (entry) {
+      if (revision) entry.revision = revision
+      entry.hash = hashText(content)
+      await writeMap(config.workspaceRoot, map)
     }
     return { ok: true, revision }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+
+export type FeishuSyncState = 'synced' | 'modified' | 'missing'
+
+export interface FeishuDocInfo {
+  token: string
+  path: string
+  title: string
+  revision: number
+  url: string
+  pulledAt?: number
+  state: FeishuSyncState
+}
+
+async function infoOf(token: string, entry: FeishuMapEntry): Promise<FeishuDocInfo> {
+  const current = await fs.readFile(entry.path, 'utf8').catch(() => null)
+  let state: FeishuSyncState = 'synced'
+  if (current === null) state = 'missing'
+  else if (entry.hash && hashText(current) !== entry.hash) state = 'modified'
+  return {
+    token,
+    path: entry.path,
+    title: entry.title,
+    revision: entry.revision,
+    url: entry.url ?? docUrlOf(token, token),
+    pulledAt: entry.pulledAt,
+    state,
+  }
+}
+
+/** 已拉取的飞书文档 + 本地同步状态（不访问网络） */
+export async function listFeishuDocs(): Promise<FeishuDocInfo[]> {
+  const config = loadConfig()
+  const map = await readMap(config.workspaceRoot)
+  const out: FeishuDocInfo[] = []
+  for (const [token, entry] of Object.entries(map.docs)) out.push(await infoOf(token, entry))
+  return out
+}
+
+/** 某个本地文件对应的飞书文档；不是飞书文档返回 null */
+export async function feishuDocInfo(path: string): Promise<FeishuDocInfo | null> {
+  const config = loadConfig()
+  const map = await readMap(config.workspaceRoot)
+  const wanted = normPath(path)
+  const hit = Object.entries(map.docs).find(([, entry]) => normPath(entry.path) === wanted)
+  return hit ? infoOf(hit[0], hit[1]) : null
+}
+
+/** 取云端最新内容（展开内嵌表格），给「查看差异 / 回写前确认」用 */
+export async function feishuRemoteContent(
+  path: string
+): Promise<{ ok: boolean; content?: string; revision?: number; error?: string }> {
+  try {
+    const info = await feishuDocInfo(path)
+    if (!info) return { ok: false, error: '这篇不是从飞书拉取的文档' }
+    const fetched = await fetchFeishuDoc(info.token)
+    const content = normalizeFeishuMarkdown(await expandEmbeddedSheets(fetched.content))
+    return { ok: true, content, revision: fetched.revision }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }

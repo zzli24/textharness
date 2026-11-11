@@ -11,6 +11,8 @@ export interface TreeApi {
   setFilter(text: string): void
   /** 只显示某个子目录（如「飞书」）；scope 为空时显示本地，排除指定顶层目录 */
   setScope(scope: string, options?: { exclude?: string[]; emptyText?: string }): void
+  /** 给文件行加状态点（路径 → synced / modified / missing），比如飞书同步状态 */
+  setBadges(badges: Map<string, string>): void
   /** 展开某个文件的所有上级目录（打开外部/深层文件时用） */
   revealPath(path: string): void
   closeMenu(): void
@@ -48,10 +50,19 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
   let scope = ''
   let scopeExclude: string[] = []
   let emptyText = '（空目录）'
+  let badges = new Map<string, string>()
+  const badgeKey = (path: string): string => path.replace(/\\/g, '/').toLowerCase()
   let menu: HTMLElement | null = null
   const collapsed = new Set<string>()
   /** 第一次拿到目录树时把所有文件夹折叠起来：不然一屏全是展开的，很乱 */
   let collapsedOnce = false
+
+  /** 配置里的根目录可能写成 C:/a/b，文件树返回的是 C:\a\b：统一成文件树的写法再比较 */
+  function nativeRoot(): string {
+    const root = opts.root().replace(/[\\/]+$/, '')
+    const sample = all[0]?.path ?? ''
+    return sample.includes('\\') ? root.replace(/\//g, '\\') : root
+  }
 
   function closeMenu(): void {
     menu?.remove()
@@ -59,14 +70,14 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
   }
 
   function scopeBase(): string {
-    const root = opts.root().replace(/[\\/]+$/, '')
+    const root = nativeRoot()
     if (!scope) return root
     const sep = root.includes('\\') ? '\\' : '/'
     return root + sep + scope
   }
 
   function inScope(path: string): boolean {
-    const root = opts.root().replace(/[\\/]+$/, '')
+    const root = nativeRoot()
     if (scope) {
       const base = scopeBase()
       return path === base || path.startsWith(base + (base.includes('\\') ? '\\' : '/'))
@@ -155,6 +166,13 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
         name.textContent = node.name
 
         row.append(twisty, icon, name)
+        const badge = node.isDir ? undefined : badges.get(badgeKey(node.path))
+        if (badge) {
+          const dot = document.createElement('span')
+          dot.className = 'tree-badge tree-badge-' + badge
+          dot.title = badge === 'modified' ? '本地已修改，还没回写飞书' : badge === 'missing' ? '文件已不存在' : '已和飞书同步'
+          row.appendChild(dot)
+        }
         host.appendChild(row)
 
         if (node.isDir) {
@@ -163,7 +181,7 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
       }
     }
 
-    const root = opts.root().replace(/[\\/]+$/, '')
+    const root = nativeRoot()
     const sep = root.includes('\\') ? '\\' : '/'
     walk(scope ? root + sep + scope : root, 0)
     if (baseAll.length === 0) {
@@ -246,6 +264,10 @@ export function createTree(host: HTMLElement, opts: TreeOptions): TreeApi {
       scope = nextScope
       scopeExclude = options?.exclude ?? []
       emptyText = options?.emptyText ?? '（空目录）'
+      render()
+    },
+    setBadges(next: Map<string, string>) {
+      badges = new Map(Array.from(next, ([k, v]) => [badgeKey(k), v]))
       render()
     },
     revealPath,

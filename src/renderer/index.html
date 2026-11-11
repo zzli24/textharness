@@ -33,28 +33,37 @@
       </nav>
 
       <aside id="sidebar">
-        <div class="side-head">
-          <div class="side-search">
-            <svg class="side-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>
-            <input id="tree-filter" type="text" placeholder="过滤" spellcheck="false" />
-          </div>
-          <button id="btn-quick-open" class="icon-btn" title="快速打开（Ctrl+P）">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3v6h6"/><path d="M6 3h7l6 6v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
-          </button>
+        <div id="source-tabs" class="source-tabs" role="tablist" aria-label="文件来源">
+          <button type="button" class="source-tab on" data-source="local" role="tab">本地</button>
+          <button type="button" class="source-tab" data-source="feishu" role="tab">飞书<span id="feishu-count" class="source-count"></span></button>
+        </div>
+        <div id="side-panel-head" class="side-panel-head">
+          <span id="side-panel-title" class="side-panel-title">工作区</span>
+          <span class="spacer"></span>
           <button id="btn-new-file" class="icon-btn" title="新建文件">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
-          <button id="btn-search-files" class="icon-btn" title="在工作区搜索 / 替换（Ctrl+Shift+F）">
+          <button id="btn-quick-open" class="icon-btn" title="快速打开（Ctrl+P）">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3v6h6"/><path d="M6 3h7l6 6v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>
+          </button>
+          <button id="btn-search-files" class="icon-btn" title="在工作区全文搜索 / 替换（Ctrl+Shift+F）">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="5.5"/><path d="M15 15l4.5 4.5"/></svg>
           </button>
+          <button id="btn-feishu-refresh" class="icon-btn" title="刷新同步状态" hidden>
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v3h-3"/></svg>
+          </button>
         </div>
-        <div id="source-tabs" class="source-tabs" role="tablist" aria-label="文件来源">
-          <button type="button" class="source-tab on" data-source="local" role="tab">本地</button>
-          <button type="button" class="source-tab" data-source="feishu" role="tab">飞书</button>
+        <div class="side-search side-search-box">
+          <svg class="side-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>
+          <input id="tree-filter" type="text" placeholder="过滤文件名，回车全文搜索" spellcheck="false" />
+          <span id="side-search-hint" class="side-search-hint">Ctrl P</span>
         </div>
-        <div id="feishu-search-panel" class="feishu-search-panel" hidden>
-          <input id="feishu-search-input" class="feishu-search-input" type="search" placeholder="搜索飞书文档…" spellcheck="false" />
-          <div id="feishu-search-results" class="feishu-search-results"></div>
+        <div id="feishu-search-results" class="feishu-search-results" hidden></div>
+        <div id="feishu-connect" class="feishu-connect" hidden>
+          <div class="feishu-connect-ico">飞</div>
+          <div class="feishu-connect-text">把飞书文档拉到本地编辑<br />改完可以一键回写</div>
+          <button type="button" id="btn-feishu-connect" class="feishu-connect-btn">连接飞书</button>
+          <div class="feishu-connect-note">只申请 文档 / 云空间 / 表格 权限</div>
         </div>
         <div id="tree" class="tree"></div>
 
@@ -69,6 +78,15 @@
           <div id="tabs"></div>
           <button id="tabs-next" class="tab-nav" title="向右滚动标签">›</button>
           <div id="tabs-spacer" title="双击新建标签"></div>
+        </div>
+        <div id="doc-head" class="doc-head" hidden>
+          <span id="doc-head-crumb" class="doc-head-crumb"></span>
+          <span id="doc-head-state" class="doc-head-chip"></span>
+          <span id="doc-head-meta" class="doc-head-meta"></span>
+          <span class="spacer"></span>
+          <button type="button" id="doc-head-diff" class="doc-head-btn">查看差异</button>
+          <button type="button" id="doc-head-open" class="doc-head-btn">在飞书打开</button>
+          <button type="button" id="doc-head-push" class="doc-head-btn primary">回写飞书</button>
         </div>
 <div id="editor-host">
           <div id="pane-left" class="editor-pane"></div>
@@ -152,32 +170,34 @@
       <footer id="status">
         <span id="st-path" class="st-path">就绪</span>
         <span class="spacer"></span>
-        <button id="st-card" class="st-btn icon-only hidden" title="卡片预览：把当前 Markdown 导出成图片">
+        <span class="st-group" data-group="doc"><button id="st-card" class="st-btn icon-only hidden" title="卡片预览：把当前 Markdown 导出成图片">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/><circle cx="16.5" cy="15.5" r="1.6"/></svg>
         </button>
         <button id="st-live-md" class="st-btn icon-only hidden" title="Markdown 即时渲染（像 Typora）：光标所在行显示源码">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7 15.2V9.4l2.1 3 2.1-3v5.8"/><path d="M16.2 9.4v4.2"/><path d="M14.4 12l1.8 2.4 1.8-2.4"/></svg>
-        </button>
-        <button id="st-json" class="st-btn icon-only" title="格式化 JSON（Ctrl+Alt+J，有选中就只处理选中部分）">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4c-2 0-3 1-3 3v3c0 1.5-1 2.5-2.5 2.5 1.5 0 2.5 1 2.5 2.5v3c0 2 1 3 3 3"/><path d="M15 4c2 0 3 1 3 3v3c0 1.5 1 2.5 2.5 2.5-1.5 0-2.5 1-2.5 2.5v3c0 2-1 3-3 3"/></svg>
-        </button>
-        <button id="st-tools" class="st-btn icon-only" title="文本工具：去重、排序、编码、提取（点开选，作用于选中内容）">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3.2 7.4h8.1M16.5 7.4h4.3M3.2 16.6h4.3M12.6 16.6h8.2"/><circle cx="13.9" cy="7.4" r="2.3"/><circle cx="10" cy="16.6" r="2.3"/></svg>
         </button>
         <button id="st-source" class="st-btn icon-only" title="在表格视图和源码之间切换">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-4 5 4 5"/><path d="M15 7l4 5-4 5"/></svg>
         </button>
         <button id="st-newgrid" class="st-btn icon-only" title="新建 CSV 表格">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M9.5 9.5V20M15 4v5"/></svg>
+        </button></span>
+        <span class="st-sep" aria-hidden="true"></span>
+        <span class="st-group" data-group="text"><button id="st-json" class="st-btn icon-only" title="格式化 JSON（Ctrl+Alt+J，有选中就只处理选中部分）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4c-2 0-3 1-3 3v3c0 1.5-1 2.5-2.5 2.5 1.5 0 2.5 1 2.5 2.5v3c0 2 1 3 3 3"/><path d="M15 4c2 0 3 1 3 3v3c0 1.5 1 2.5 2.5 2.5-1.5 0-2.5 1-2.5 2.5v3c0 2-1 3-3 3"/></svg>
         </button>
-        <button id="st-update" class="st-btn upd-chip hidden" title="有新版本">
-          <span id="st-update-text">有新版本</span>
+        <button id="st-tools" class="st-btn icon-only" title="文本工具：去重、排序、编码、提取（点开选，作用于选中内容）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3.2 7.4h8.1M16.5 7.4h4.3M3.2 16.6h4.3M12.6 16.6h8.2"/><circle cx="13.9" cy="7.4" r="2.3"/><circle cx="10" cy="16.6" r="2.3"/></svg>
         </button>
         <button id="st-diff" class="st-btn icon-only" title="文本对比（对比两段文本或两个文件）">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="7" height="14" rx="1.5"/><rect x="14" y="5" width="7" height="14" rx="1.5"/><path d="M7 12h2M18 12h-2"/></svg>
         </button>
         <button id="st-column" class="st-btn icon-only" title="列选择模式（也可以按住 Alt 拖拽）">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="4" y="4" width="6" height="16" rx="1.2"/><rect x="14" y="4" width="6" height="16" rx="1.2"/></svg>
+        </button></span>
+        <span class="st-sep" aria-hidden="true"></span>
+        <button id="st-update" class="st-btn upd-chip hidden" title="有新版本">
+          <span id="st-update-text">有新版本</span>
         </button>
         <select id="st-encoding" class="st-select" title="文件编码">
           <option value="utf8">UTF-8</option>

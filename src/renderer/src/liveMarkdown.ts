@@ -71,10 +71,10 @@ class CodeHeaderWidget extends WidgetType {
     head.className = this.hasCode ? 'cm-md-code-head' : 'cm-md-code-head cm-md-code-head-only'
     const label = document.createElement('span')
     label.className = 'cm-md-code-label'
-    label.textContent = '代码块'
+    label.textContent = ''
     const name = document.createElement('span')
     name.className = 'cm-md-code-lang'
-    name.textContent = this.lang ? this.lang.toUpperCase() : 'CODE'
+    name.textContent = this.lang ? this.lang.toUpperCase() : ''
     const copy = document.createElement('button')
     copy.type = 'button'
     copy.className = 'cm-md-code-copy'
@@ -97,13 +97,115 @@ class CodeHeaderWidget extends WidgetType {
   }
 }
 
+class BulletWidget extends WidgetType {
+  constructor(readonly depth: number) {
+    super()
+  }
+
+  eq(other: BulletWidget): boolean {
+    return other.depth === this.depth
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement('span')
+    el.className = 'cm-md-bullet-w cm-md-bullet-d' + (this.depth % 3)
+    el.setAttribute('aria-hidden', 'true')
+    return el
+  }
+}
+
+class TaskWidget extends WidgetType {
+  constructor(
+    readonly checked: boolean,
+    /** 方括号里那个字符的位置（空格或 x） */
+    readonly pos: number
+  ) {
+    super()
+  }
+
+  eq(other: TaskWidget): boolean {
+    return other.checked === this.checked && other.pos === this.pos
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const box = document.createElement('span')
+    box.className = this.checked ? 'cm-md-task checked' : 'cm-md-task'
+    box.setAttribute('role', 'checkbox')
+    box.setAttribute('aria-checked', String(this.checked))
+    box.title = this.checked ? '标记为未完成' : '标记为完成'
+    box.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      view.dispatch({ changes: { from: this.pos, to: this.pos + 1, insert: this.checked ? ' ' : 'x' } })
+    })
+    return box
+  }
+
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
+const CALLOUT_LABELS: Record<string, { label: string; icon: string }> = {
+  note: { label: '提示', icon: '💡' },
+  tip: { label: '技巧', icon: '✅' },
+  important: { label: '重要', icon: '📌' },
+  warning: { label: '注意', icon: '⚠️' },
+  caution: { label: '警告', icon: '⛔' },
+}
+
+/** 第 lineNo 行所在的引用块是不是 Callout；是的话返回类型、当前行是否是标题行 */
+function calloutKindAt(doc: EditorState['doc'], lineNo: number): { type: string; head: boolean; hasIcon: boolean } | null {
+  let start = lineNo
+  while (start > 1 && /^\s*>/.test(doc.line(start - 1).text)) start -= 1
+  const headText = doc.line(start).text
+  const m = /^\s*>\s?\[!(note|tip|important|warning|caution)\]\s*(.*)$/i.exec(headText)
+  if (!m) return null
+  // 标记后面紧跟 emoji（飞书高亮块带的）就不再额外画图标
+  const hasIcon = /^\p{Extended_Pictographic}/u.test(m[2] ?? '')
+  return { type: m[1].toLowerCase(), head: start === lineNo, hasIcon }
+}
+
+class CalloutLabelWidget extends WidgetType {
+  constructor(
+    readonly type: string,
+    readonly hasIcon: boolean
+  ) {
+    super()
+  }
+
+  eq(other: CalloutLabelWidget): boolean {
+    return other.type === this.type && other.hasIcon === this.hasIcon
+  }
+
+  toDOM(): HTMLElement {
+    const meta = CALLOUT_LABELS[this.type] ?? CALLOUT_LABELS['note']
+    const el = document.createElement('span')
+    el.className = 'cm-md-callout-label'
+    el.textContent = this.hasIcon ? '' : meta.icon + ' ' + meta.label
+    return el
+  }
+}
+
 class TableWidget extends WidgetType {
-  constructor(readonly rows: string[][]) {
+  constructor(
+    readonly rows: string[][],
+    readonly aligns: string[] = []
+  ) {
     super()
   }
 
   eq(other: TableWidget): boolean {
-    return JSON.stringify(other.rows) === JSON.stringify(this.rows)
+    return JSON.stringify(other.rows) === JSON.stringify(this.rows) && other.aligns.join() === this.aligns.join()
+  }
+
+  /** 列对齐：分隔行里写了 :--: 就按它；没写时纯数字列右对齐 */
+  private columnAlign(col: number): { align: string; numeric: boolean } {
+    const body = this.rows.slice(1).map((row) => (row[col] ?? '').trim()).filter(Boolean)
+    const numeric =
+      body.length > 0 && body.every((cell) => /^[-+]?[\d,]+(\.\d+)?\s*(%|[kmgtp]i?b?)?$/i.test(cell))
+    const align = this.aligns[col] || (numeric ? 'right' : '')
+    return { align, numeric }
   }
 
   toDOM(): HTMLElement {
@@ -132,21 +234,26 @@ class TableWidget extends WidgetType {
     table.className = 'cm-md-table'
     const head = document.createElement('thead')
     const headRow = document.createElement('tr')
-    for (const cell of this.rows[0] ?? []) {
+    const cols = Math.max(...this.rows.map((r) => r.length))
+    const meta = Array.from({ length: cols }, (_, col) => this.columnAlign(col))
+    ;(this.rows[0] ?? []).forEach((cell, col) => {
       const th = document.createElement('th')
       th.textContent = cell
+      if (meta[col]?.align) th.style.textAlign = meta[col].align
       headRow.appendChild(th)
-    }
+    })
     head.appendChild(headRow)
     table.appendChild(head)
     const body = document.createElement('tbody')
     for (const row of this.rows.slice(1)) {
       const tr = document.createElement('tr')
-      for (const cell of row) {
+      row.forEach((cell, col) => {
         const td = document.createElement('td')
         td.textContent = cell
+        if (meta[col]?.align) td.style.textAlign = meta[col].align
+        if (meta[col]?.numeric) td.classList.add('cm-md-num')
         tr.appendChild(td)
-      }
+      })
       body.appendChild(tr)
     }
     table.appendChild(body)
@@ -437,11 +544,15 @@ function buildDecorations(state: EditorState): DecorationSet {
         const tableEnd = end - 1
         const blockActive = selectionTouchesLine(state, line.from, doc.line(tableEnd).to)
         if (!blockActive) {
+          // 分隔行里的 :--- / ---: / :---: 决定列对齐
+          const aligns = (rows[1] ?? []).map((cell) =>
+            /^:-+:$/.test(cell) ? 'center' : /^-+:$/.test(cell) ? 'right' : /^:-+$/.test(cell) ? 'left' : ''
+          )
           // 去掉分隔行（第二行 |---|）
           const dataRows = rows.filter(
             (row, index) => index !== 1 || !row.every((cell) => /^:?-{1,}:?$/.test(cell) || cell === '')
           )
-          push(line.from, doc.line(tableEnd).to, Decoration.replace({ widget: new TableWidget(dataRows), block: true }))
+          push(line.from, doc.line(tableEnd).to, Decoration.replace({ widget: new TableWidget(dataRows, aligns), block: true }))
           i = tableEnd + 1
           continue
         }
@@ -462,14 +573,56 @@ function buildDecorations(state: EditorState): DecorationSet {
       continue
     }
 
+    /* ---- 分隔线：--- / *** / ___（上一行是空行，避免和 setext 标题混淆） ---- */
+    if (!active && /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(text) && (i === 1 || doc.line(i - 1).text.trim() === '')) {
+      push(line.from, line.from, Decoration.line({ class: 'cm-md-hr' }))
+      hide(line.from, line.to)
+      i += 1
+      continue
+    }
+
     /* ---- 引用 / 列表 ---- */
     if (!active) {
       const quote = /^(\s*>\s?)/.exec(text)
+      const list = quote ? null : /^(\s*)([-*+]|\d+[.)])(\s+)(\[([ xX])\]\s+)?/.exec(text)
       if (quote) {
-        push(line.from, line.from, Decoration.line({ class: 'cm-md-quote' }))
+        // Callout：> [!NOTE] / [!TIP] / [!WARNING] / [!CAUTION] / [!IMPORTANT]（GitHub 语法，也用来承接飞书高亮块）
+        const kind = calloutKindAt(doc, i)
+        const classes = ['cm-md-quote']
+        if (kind) {
+          classes.push('cm-md-callout', 'cm-md-callout-' + kind.type)
+          const prev = i > 1 ? doc.line(i - 1).text : ''
+          const next = i < doc.lines ? doc.line(i + 1).text : ''
+          if (!/^\s*>/.test(prev) || kind.head) classes.push('cm-md-callout-first')
+          if (!/^\s*>/.test(next)) classes.push('cm-md-callout-last')
+        }
+        push(line.from, line.from, Decoration.line({ class: classes.join(' ') }))
         hide(line.from, line.from + quote[1].length)
-      } else if (/^\s{0,3}([-*+]|\d+[.)])\s+/.test(text)) {
-        push(line.from, line.from, Decoration.line({ class: 'cm-md-list' }))
+        if (kind?.head) {
+          const marker = /\[!(\w+)\]\s*/.exec(text)
+          if (marker) {
+            const from = line.from + marker.index
+            push(from, from + marker[0].length, Decoration.replace({ widget: new CalloutLabelWidget(kind.type, kind.hasIcon) }))
+          }
+        }
+      } else if (list) {
+        const depth = Math.floor(list[1].replace(/\t/g, '    ').length / 2)
+        const markerFrom = line.from + list[1].length
+        const markerTo = markerFrom + list[2].length + list[3].length
+        const isTask = Boolean(list[4])
+        const checked = isTask && list[5].toLowerCase() === 'x'
+        const classes = ['cm-md-list']
+        if (isTask) classes.push('cm-md-task-line')
+        if (checked) classes.push('cm-md-task-done')
+        push(line.from, line.from, Decoration.line({ class: classes.join(' ') }))
+        if (isTask) {
+          const boxPos = markerTo + 1
+          push(markerFrom, markerTo + list[4].length, Decoration.replace({ widget: new TaskWidget(checked, boxPos) }))
+        } else if (/^[-*+]$/.test(list[2])) {
+          push(markerFrom, markerTo, Decoration.replace({ widget: new BulletWidget(depth) }))
+        } else {
+          push(markerFrom, markerFrom + list[2].length, Decoration.mark({ class: 'cm-md-olnum' }))
+        }
       }
     }
 

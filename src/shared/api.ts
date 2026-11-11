@@ -249,12 +249,16 @@ export interface ThApi {
       path?: string
       title?: string
       revision?: number
+      backup?: string
       error?: string
     }>
     feishuSwitchApp(mode: 'new' | 'bind', payload: { appId?: string; appSecret?: string }): Promise<{
       ok: boolean
       error?: string
     }>
+    feishuList(): Promise<Array<FeishuDocInfo>>
+    feishuDocInfo(path: string): Promise<FeishuDocInfo | null>
+    feishuRemote(path: string): Promise<{ ok: boolean; content?: string; revision?: number; error?: string }>
     feishuSearch(query: string): Promise<{
       ok: boolean
       items: Array<{ title: string; ref: string; type: string }>
@@ -320,3 +324,14 @@ export interface ThApi {
 }
 
 export type { AppConfig, Encoding, FileMeta, TreeNode }
+
+
+export interface FeishuDocInfo {
+  token: string
+  path: string
+  title: string
+  revision: number
+  url: string
+  pulledAt?: number
+  state: 'synced' | 'modified' | 'missing'
+}

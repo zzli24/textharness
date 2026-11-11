@@ -3,7 +3,7 @@ export type Eol = 'LF' | 'CRLF'
 
 export type ReasoningLevel = 'auto' | 'low' | 'medium' | 'high'
 
-export type MdThemeId = 'github' | 'bear' | 'typo' | 'vue' | 'solarized' | 'dracula' | 'custom'
+export type MdThemeId = 'github' | 'feishu' | 'bear' | 'typo' | 'vue' | 'solarized' | 'dracula' | 'custom'
 
 export interface AppConfig {
   /** 工作根目录 */
