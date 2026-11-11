@@ -365,10 +365,13 @@ export async function searchFeishuDocs(
   }
   const items: FeishuSearchItem[] = []
   for (const item of results) {
-    const title = stripHighlight(String(item['title'] ?? item['title_highlighted'] ?? '未命名'))
-    const url = String(item['url'] ?? item['doc_url'] ?? item['open_url'] ?? '')
-    const token = String(item['token'] ?? item['obj_token'] ?? item['doc_token'] ?? '')
-    const type = String(item['doc_type'] ?? item['type'] ?? '')
+    const meta = (item['result_meta'] ?? {}) as Record<string, unknown>
+    const title = stripHighlight(
+      String(item['title_highlighted'] ?? item['title'] ?? meta['title'] ?? '未命名')
+    )
+    const url = String(meta['url'] ?? item['url'] ?? item['doc_url'] ?? '')
+    const token = String(meta['token'] ?? item['token'] ?? item['obj_token'] ?? '')
+    const type = String(meta['doc_types'] ?? item['entity_type'] ?? item['doc_type'] ?? '')
     const ref = url || token
     if (ref) items.push({ title, ref, type })
   }

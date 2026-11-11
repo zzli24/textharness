@@ -2633,10 +2633,14 @@ async function boot(): Promise<void> {
   void tree.refresh()
 
   const sourceTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.source-tab'))
-  const feishuPanelBtn = $('btn-feishu-panel')
+  const feishuPanel = $('feishu-search-panel')
+  const feishuSearchInput = $<HTMLInputElement>('feishu-search-input')
+  const feishuSearchResults = $('feishu-search-results')
+  let searchSeq = 0
+  let searchTimer: number | undefined
   const applySource = (source: string): void => {
     for (const tab of sourceTabs) tab.classList.toggle('on', tab.dataset['source'] === source)
-    feishuPanelBtn.hidden = source !== 'feishu'
+    feishuPanel.hidden = source !== 'feishu'
     if (source === 'feishu') {
       tree.setScope('飞书', { emptyText: '（还没有拉取飞书文档，点上面的按钮搜索）' })
     } else {
@@ -2646,9 +2650,79 @@ async function boot(): Promise<void> {
   for (const tab of sourceTabs) {
     tab.addEventListener('click', () => applySource(tab.dataset['source'] ?? 'local'))
   }
-  feishuPanelBtn.addEventListener('click', () => {
-    localStorage.setItem('th.settings.section', 'integrations')
-    void openSettingsFlow()
+  const renderSearchResults = (items: Array<{ title: string; ref: string; type: string }>): void => {
+    feishuSearchResults.textContent = ''
+    if (!items.length) {
+      const empty = document.createElement('div')
+      empty.className = 'feishu-search-status'
+      empty.textContent = '没有搜到相关文档'
+      feishuSearchResults.appendChild(empty)
+      return
+    }
+    for (const item of items.slice(0, 20)) {
+      const row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'feishu-result'
+      const title = document.createElement('span')
+      title.className = 'feishu-result-title'
+      title.textContent = item.title
+      const meta = document.createElement('span')
+      meta.className = 'feishu-result-meta'
+      meta.textContent = item.type || '飞书文档'
+      row.append(title, meta)
+      row.addEventListener('click', () => {
+        row.disabled = true
+        meta.textContent = '正在拉取…'
+        void window.th.app.feishuPull(item.ref).then((result) => {
+          if (!result.ok) {
+            meta.textContent = '拉取失败：' + (result.error ?? '未知错误')
+            row.disabled = false
+            return
+          }
+          feishuSearchResults.textContent = ''
+          feishuSearchInput.value = ''
+          document.dispatchEvent(new CustomEvent('th:refresh-tree'))
+          if (result.path) {
+            window.dispatchEvent(new CustomEvent('th:open-path', { detail: result.path }))
+          }
+        })
+      })
+      feishuSearchResults.appendChild(row)
+    }
+  }
+
+  const runFeishuSearch = (): void => {
+    const query = feishuSearchInput.value.trim().slice(0, 30)
+    if (!query) {
+      feishuSearchResults.textContent = ''
+      return
+    }
+    const seq = ++searchSeq
+    const status = document.createElement('div')
+    status.className = 'feishu-search-status'
+    status.textContent = '搜索中…'
+    feishuSearchResults.textContent = ''
+    feishuSearchResults.appendChild(status)
+    void window.th.app.feishuSearch(query).then((result) => {
+      if (seq !== searchSeq) return
+      if (!result.ok) {
+        status.textContent = '搜索失败：' + (result.error ?? '请先登录飞书')
+        return
+      }
+      renderSearchResults(result.items)
+    })
+  }
+
+  feishuSearchInput.addEventListener('input', () => {
+    if (searchTimer) window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(runFeishuSearch, 300)
+  })
+  feishuSearchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (searchTimer) window.clearTimeout(searchTimer)
+      runFeishuSearch()
+    }
   })
   applySource('local')
 

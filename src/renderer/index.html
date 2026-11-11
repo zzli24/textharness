@@ -52,7 +52,10 @@
           <button type="button" class="source-tab on" data-source="local" role="tab">本地</button>
           <button type="button" class="source-tab" data-source="feishu" role="tab">飞书</button>
         </div>
-        <button type="button" id="btn-feishu-panel" class="source-action" hidden>搜索 / 拉取飞书文档…</button>
+        <div id="feishu-search-panel" class="feishu-search-panel" hidden>
+          <input id="feishu-search-input" class="feishu-search-input" type="search" placeholder="搜索飞书文档…" spellcheck="false" />
+          <div id="feishu-search-results" class="feishu-search-results"></div>
+        </div>
         <div id="tree" class="tree"></div>
 
       </aside>

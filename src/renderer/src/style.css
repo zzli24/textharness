@@ -4315,3 +4315,70 @@ body.th-feishu-doc {
 body.th-feishu-doc .cm-content {
   font-family: var(--md-font);
 }
+
+
+/* 飞书来源里的搜索框 */
+.feishu-search-panel {
+  flex: 0 0 auto;
+  padding: 4px 8px 2px;
+}
+
+.feishu-search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--fg);
+  font-size: 12px;
+  outline: none;
+}
+
+.feishu-search-input:focus {
+  border-color: var(--accent);
+}
+
+.feishu-search-results {
+  margin-top: 4px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.feishu-result {
+  display: block;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.feishu-result:hover {
+  background: var(--bg-3);
+}
+
+.feishu-result-title {
+  display: block;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feishu-result-meta {
+  display: block;
+  color: var(--fg-dim);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.feishu-search-status {
+  padding: 5px 6px;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
